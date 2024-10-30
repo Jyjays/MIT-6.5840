@@ -1,33 +1,76 @@
 package mr
 
-import "log"
-import "net"
-import "os"
-import "net/rpc"
-import "net/http"
+import (
+	"log"
+	"net"
+	"net/http"
+	"net/rpc"
+	"os"
+	"sync"
+)
 
+type State int
+type Identity int
+
+const (
+	Free State = iota
+	Working
+	Finish
+)
+const (
+	MAP Identity = iota
+	REDUCE
+)
+
+var lock sync.RWMutex
 
 type Coordinator struct {
-	// Your definitions here.
-
+	mapSize              int
+	reduceSize           int
+	mapAccessalbeSize    int
+	reduceAccessableSize int
+	state                []State
+	identity             []Identity
+	locations            []string
+	//intermediate         []KeyValue
 }
 
 // Your code here -- RPC handlers for the worker to call.
 
-//
 // an example RPC handler.
 //
 // the RPC argument and reply types are defined in rpc.go.
-//
 func (c *Coordinator) Example(args *ExampleArgs, reply *ExampleReply) error {
 	reply.Y = args.X + 1
 	return nil
 }
 
+func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
+	lock.RLock()
+	defer lock.RUnlock()
+	if c.mapAccessalbeSize > 0 {
+		reply.Files = c.locations[c.mapSize-c.mapAccessalbeSize : c.mapSize-c.mapAccessalbeSize+1]
+		reply.TaskType = MAP
+		reply.TaskId = c.mapSize - c.mapAccessalbeSize
+		reply.nReduce = c.reduceSize
+		c.mapAccessalbeSize--
+		c.state[reply.TaskId] = Working
+		c.identity[reply.TaskId] = MAP
+		return nil
+	}
+	return nil
+}
 
-//
+func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
+	lock.Lock()
+	defer lock.Unlock()
+	if c.identity[args.TaskId] == MAP {
+		c.state[args.TaskId] = Finish
+	}
+	return nil
+}
+
 // start a thread that listens for RPCs from worker.go
-//
 func (c *Coordinator) server() {
 	rpc.Register(c)
 	rpc.HandleHTTP()
@@ -41,29 +84,72 @@ func (c *Coordinator) server() {
 	go http.Serve(l, nil)
 }
 
-//
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
-//
 func (c *Coordinator) Done() bool {
-	ret := false
+	ret := true
 
 	// Your code here.
-
 
 	return ret
 }
 
-//
+func GetM_andSplits(file []string, blocksizeMB int) (int, [][]string) {
+	blocksize := blocksizeMB * 1024 * 1024
+	blocks := [][]string{}
+	currentblock := []string{}
+	totalsize := 0
+	currentsize := 0
+	for _, content := range file {
+		totalsize += len(content)
+		contentsize := len(content)
+		if currentsize+contentsize > blocksize {
+			blocks = append(blocks, currentblock)
+			currentblock = []string{}
+			currentsize = 0
+		}
+		currentblock = append(currentblock, content)
+		currentsize += contentsize
+	}
+	if len(currentblock) > 0 {
+		blocks = append(blocks, currentblock)
+	}
+	return len(blocks), blocks
+}
+
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
-//
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
+	// TODO: Read the files and get splits
+	// intermediate := []mr.KeyValue{}
+	// for _, filename := range os.Args[2:] {
+	// 	file, err := os.Open(filename)
+	// 	if err != nil {
+	// 		log.Fatalf("cannot open %v", filename)
+	// 	}
+	// 	content, err := ioutil.ReadAll(file)
+	// 	if err != nil {
+	// 		log.Fatalf("cannot read %v", filename)
+	// 	}
+	// 	file.Close()
+	// 	kva := mapf(filename, string(content))
+	// 	intermediate = append(intermediate, kva...)
+	// }
 
-	// Your code here.
+	// Calculate the number of Map tasks
+	// M = sizeof files / 16MB
 
+	//M, splits := GetM_andSplits(files, 16)
+	// In this lab the file is input in the form of pg-*, which is already split
+	// So we can just use the length of the files
+	M := len(files)
+	c.mapSize, c.mapAccessalbeSize = M, M
+	c.reduceSize, c.reduceAccessableSize = nReduce, nReduce
+	c.state = make([]State, M+nReduce)
+	c.identity = make([]Identity, M+nReduce)
+	c.locations = files
 
 	c.server()
 	return &c
