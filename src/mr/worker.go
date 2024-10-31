@@ -39,7 +39,7 @@ func Worker(mapf func(string, string) []KeyValue,
 		case MAP:
 			single_thread_map(mapf, &reply)
 		case REDUCE:
-
+			single_thread_reduce(reducef, &reply)
 		}
 
 	}
@@ -112,18 +112,33 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		intermediate = append(intermediate, kva...)
 	}
 	// write intermediate to file
+	args := TaskArgs{}
 	for _, kv := range intermediate {
-		reduceTask := ihash(kv.Key) % reply.nReduce
+		reduceTask := ihash(kv.Key) % reply.Nreduce
 		filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reduceTask)
-		file, err := os.Create(filename)
-		//file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatalf("cannot open %v", filename)
+			file, err = os.Create(filename)
+			if err != nil {
+				log.Fatalf("cannot create %v", filename)
+			}
 		}
 		fmt.Fprintf(file, "%v %v\n", kv.Key, kv.Value)
 		file.Close()
+		args.location = reduceTask
+		args.TaskId = reply.TaskId
+		args.TaskType = REDUCE
+		args.Files = append(args.Files, filename)
+		args.Nreduce = reply.Nreduce
+		reply := TaskReply{}
+		fmt.Printf("MapTask %v\n", args)
+		ok := call("Coordinator.FinishTask", &args, &reply)
+		if !ok {
+			fmt.Printf("MapTask failed")
+			break
+		}
 	}
-	call("Coordinator.Done", &reply, &struct{}{})
+
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply) {
@@ -133,4 +148,5 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	// output file name format : mr-out-ReduceTaskId
 	//intermediate := []KeyValue{}
 	//filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reply.ReduceTaskId)
+	call("Coordinator.FinishTask", &TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}, &TaskReply{})
 }

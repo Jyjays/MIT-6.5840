@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/rpc"
 	"os"
+	"path/filepath"
 	"sync"
 )
 
@@ -49,13 +50,14 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 	lock.RLock()
 	defer lock.RUnlock()
 	if c.mapAccessalbeSize > 0 {
+		reply.Nreduce = c.reduceSize
 		reply.Files = c.locations[c.mapSize-c.mapAccessalbeSize : c.mapSize-c.mapAccessalbeSize+1]
 		reply.TaskType = MAP
 		reply.TaskId = c.mapSize - c.mapAccessalbeSize
-		reply.nReduce = c.reduceSize
+
 		c.mapAccessalbeSize--
-		c.state[reply.TaskId] = Working
-		c.identity[reply.TaskId] = MAP
+		c.state[c.mapSize-c.mapAccessalbeSize] = Working
+		c.identity[c.mapSize-c.mapAccessalbeSize] = MAP
 		return nil
 	}
 	return nil
@@ -87,7 +89,7 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
-	ret := true
+	ret := false
 
 	// Your code here.
 
@@ -123,33 +125,22 @@ func GetM_andSplits(file []string, blocksizeMB int) (int, [][]string) {
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	// TODO: Read the files and get splits
-	// intermediate := []mr.KeyValue{}
-	// for _, filename := range os.Args[2:] {
-	// 	file, err := os.Open(filename)
-	// 	if err != nil {
-	// 		log.Fatalf("cannot open %v", filename)
-	// 	}
-	// 	content, err := ioutil.ReadAll(file)
-	// 	if err != nil {
-	// 		log.Fatalf("cannot read %v", filename)
-	// 	}
-	// 	file.Close()
-	// 	kva := mapf(filename, string(content))
-	// 	intermediate = append(intermediate, kva...)
-	// }
 
-	// Calculate the number of Map tasks
-	// M = sizeof files / 16MB
-
-	//M, splits := GetM_andSplits(files, 16)
 	// In this lab the file is input in the form of pg-*, which is already split
 	// So we can just use the length of the files
-	M := len(files)
+	//file_names := []string{}
+	// files : pg-*.txt, so we should get all the files
+
+	file_names, err := filepath.Glob(files[0])
+	if err != nil {
+		log.Fatal("cannot find files")
+	}
+	M := len(file_names)
 	c.mapSize, c.mapAccessalbeSize = M, M
 	c.reduceSize, c.reduceAccessableSize = nReduce, nReduce
 	c.state = make([]State, M+nReduce)
 	c.identity = make([]Identity, M+nReduce)
-	c.locations = files
+	c.locations = file_names
 
 	c.server()
 	return &c

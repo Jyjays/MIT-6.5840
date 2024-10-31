@@ -28,13 +28,14 @@ type ExampleReply struct {
 type TaskArgs struct {
 	TaskType Identity
 	Files    []string
-	nReduce  int
+	Nreduce  int
 	TaskId   int
+	location int
 }
 type TaskReply struct {
 	TaskType Identity
 	Files    []string
-	nReduce  int
+	Nreduce  int
 	TaskId   int
 }
 
