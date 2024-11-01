@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -58,7 +59,16 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 		c.mapAccessalbeSize--
 		c.state[c.mapSize-c.mapAccessalbeSize] = Working
 		c.identity[c.mapSize-c.mapAccessalbeSize] = MAP
-		return nil
+	} else if c.reduceAccessableSize > 0 {
+		reply.Nreduce = c.reduceSize
+		reply.Files = []string{}
+		reply.TaskType = REDUCE
+		//reply.TaskSize = len(c.locations)
+		reply.TaskId = c.reduceSize - c.reduceAccessableSize
+		c.reduceAccessableSize--
+		//fmt.Println("machine: ", c.mapSize+c.reduceSize-c.reduceAccessableSize)
+		c.state[c.mapSize+c.reduceSize-c.reduceAccessableSize-1] = Working
+		c.identity[c.mapSize+c.reduceSize-c.reduceAccessableSize-1] = REDUCE
 	}
 	return nil
 }
@@ -68,8 +78,30 @@ func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 	defer lock.Unlock()
 	if c.identity[args.TaskId] == MAP {
 		c.state[args.TaskId] = Finish
+	} else if c.identity[args.TaskId] == REDUCE {
+		c.state[args.TaskId] = Finish
+	}
+	if c.allTasksFinished() {
+		c.Done() // 调用Done函数
 	}
 	return nil
+}
+
+func (c *Coordinator) allTasksFinished() bool {
+	for _, state := range c.state {
+		if state != Finish {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) bool {
+	lock.Lock()
+	defer lock.Unlock()
+
+	c.state[args.TaskId] = Working
+	return true
 }
 
 // start a thread that listens for RPCs from worker.go
@@ -136,10 +168,14 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 		log.Fatal("cannot find files")
 	}
 	M := len(file_names)
+	fmt.Println("file_names: ", file_names)
 	c.mapSize, c.mapAccessalbeSize = M, M
+	fmt.Println("mapsize, mapAccessableSize: ", c.mapSize, c.mapAccessalbeSize)
 	c.reduceSize, c.reduceAccessableSize = nReduce, nReduce
-	c.state = make([]State, M+nReduce)
-	c.identity = make([]Identity, M+nReduce)
+	worker_size := M + nReduce
+	fmt.Println("worker_size: ", worker_size)
+	c.state = make([]State, worker_size)
+	c.identity = make([]Identity, worker_size)
 	c.locations = file_names
 
 	c.server()

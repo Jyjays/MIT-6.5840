@@ -30,9 +30,9 @@ type TaskArgs struct {
 	Files    []string
 	Nreduce  int
 	TaskId   int
-	location int
 }
 type TaskReply struct {
+	//TaskSize int
 	TaskType Identity
 	Files    []string
 	Nreduce  int

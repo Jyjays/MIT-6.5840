@@ -1,12 +1,16 @@
 package mr
 
 import (
+	"encoding/json"
 	"fmt"
 	"hash/fnv"
 	"io/ioutil"
 	"log"
 	"net/rpc"
 	"os"
+	"path/filepath"
+	"sort"
+	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -14,6 +18,13 @@ type KeyValue struct {
 	Key   string
 	Value string
 }
+
+type ByKey []KeyValue
+
+// for sorting by key.
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
 
 // use ihash(key) % NReduce to choose the reduce
 // task number for each KeyValue emitted by Map.
@@ -37,9 +48,11 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 		switch reply.TaskType {
 		case MAP:
-			single_thread_map(mapf, &reply)
+			go single_thread_map(mapf, &reply)
+			//time.Sleep(1 * time.Second)
 		case REDUCE:
-			single_thread_reduce(reducef, &reply)
+			go single_thread_reduce(reducef, &reply)
+			//time.Sleep(1 * time.Second)
 		}
 
 	}
@@ -97,6 +110,17 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
+	go func() {
+		for {
+			args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
+
+			ok := call("Coordinator.Heartbeat", &args, &struct{}{})
+			if !ok {
+				break
+			}
+			time.Sleep(10 * time.Second)
+		}
+	}()
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
 		file, err := os.Open(filename)
@@ -112,7 +136,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		intermediate = append(intermediate, kva...)
 	}
 	// write intermediate to file
-	args := TaskArgs{}
+	//args := TaskArgs{}
 	for _, kv := range intermediate {
 		reduceTask := ihash(kv.Key) % reply.Nreduce
 		filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reduceTask)
@@ -123,22 +147,14 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 				log.Fatalf("cannot create %v", filename)
 			}
 		}
-		fmt.Fprintf(file, "%v %v\n", kv.Key, kv.Value)
-		file.Close()
-		args.location = reduceTask
-		args.TaskId = reply.TaskId
-		args.TaskType = REDUCE
-		args.Files = append(args.Files, filename)
-		args.Nreduce = reply.Nreduce
-		reply := TaskReply{}
-		fmt.Printf("MapTask %v\n", args)
-		ok := call("Coordinator.FinishTask", &args, &reply)
-		if !ok {
-			fmt.Printf("MapTask failed")
-			break
+		enc := json.NewEncoder(file)
+		err = enc.Encode(&kv)
+		if err != nil {
+			log.Fatalf("cannot encode %v", kv)
 		}
+		file.Close()
 	}
-
+	call("Coordinator.FinishTask", reply, &TaskReply{})
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply) {
@@ -148,5 +164,58 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	// output file name format : mr-out-ReduceTaskId
 	//intermediate := []KeyValue{}
 	//filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reply.ReduceTaskId)
-	call("Coordinator.FinishTask", &TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}, &TaskReply{})
+	go func() {
+		for {
+			args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
+			ok := call("Coordinator.HeartBeat", &args, &struct{}{})
+			if !ok {
+				break
+			}
+			time.Sleep(10 * time.Second)
+		}
+	}()
+
+	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", reply.TaskId))
+	if err != nil {
+		log.Fatalf("cannot read %v", reply.TaskId)
+	}
+	intermediate := []KeyValue{}
+	for _, filename := range inter_files {
+		file, err := os.Open(filename)
+		if err != nil {
+			log.Fatalf("cannot open %v", filename)
+		}
+		dec := json.NewDecoder(file)
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			intermediate = append(intermediate, kv)
+		}
+		file.Close()
+	}
+	sort.Sort(ByKey(intermediate))
+	oname := fmt.Sprintf("mr-out-%d", reply.TaskId)
+	ofile, _ := os.Create(oname)
+
+	i := 0
+	for i < len(intermediate) {
+		j := i + 1
+		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
+			j++
+		}
+		values := []string{}
+		for k := i; k < j; k++ {
+			values = append(values, intermediate[k].Value)
+		}
+		output := reducef(intermediate[i].Key, values)
+
+		// this is the correct format for each line of Reduce output.
+		fmt.Fprintf(ofile, "%v %v\n", intermediate[i].Key, output)
+
+		i = j
+	}
+	ofile.Close()
+	call("Coordinator.FinishTask", reply, &TaskReply{})
 }
