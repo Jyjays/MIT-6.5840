@@ -39,6 +39,7 @@ func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
 	// Your worker implementation here.
+outerLoop:
 	for {
 		args := struct{}{}
 		reply := TaskReply{}
@@ -49,43 +50,13 @@ func Worker(mapf func(string, string) []KeyValue,
 		switch reply.TaskType {
 		case MAP:
 			go single_thread_map(mapf, &reply)
-			//time.Sleep(1 * time.Second)
 		case REDUCE:
 			go single_thread_reduce(reducef, &reply)
-			//time.Sleep(1 * time.Second)
+		case NONE:
+			break outerLoop
 		}
-
 	}
-	// uncomment to send the Example RPC to the coordinator.
-	//CallExample()
 
-}
-
-// example function to show how to make an RPC call to the coordinator.
-//
-// the RPC argument and reply types are defined in rpc.go.
-func CallExample() {
-
-	// declare an argument structure.
-	args := ExampleArgs{}
-
-	// fill in the argument(s).
-	args.X = 99
-
-	// declare a reply structure.
-	reply := ExampleReply{}
-
-	// send the RPC request, wait for the reply.
-	// the "Coordinator.Example" tells the
-	// receiving server that we'd like to call
-	// the Example() method of struct Coordinator.
-	ok := call("Coordinator.Example", &args, &reply)
-	if ok {
-		// reply.Y should be 100.
-		fmt.Printf("reply.Y %v\n", reply.Y)
-	} else {
-		fmt.Printf("call failed!\n")
-	}
 }
 
 // send an RPC request to the coordinator, wait for the response.
@@ -110,17 +81,23 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
+	done := make(chan struct{})
 	go func() {
 		for {
-			args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
-
-			ok := call("Coordinator.Heartbeat", &args, &struct{}{})
-			if !ok {
-				break
+			select {
+			case <-done:
+				return
+			default:
+				args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
+				ok := call("Coordinator.HeartBeat", &args, &struct{}{})
+				if !ok {
+					return
+				}
+				time.Sleep(10 * time.Second)
 			}
-			time.Sleep(10 * time.Second)
 		}
 	}()
+
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
 		file, err := os.Open(filename)
@@ -135,8 +112,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		kva := mapf(filename, string(content))
 		intermediate = append(intermediate, kva...)
 	}
-	// write intermediate to file
-	//args := TaskArgs{}
+
 	for _, kv := range intermediate {
 		reduceTask := ihash(kv.Key) % reply.Nreduce
 		filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reduceTask)
@@ -154,7 +130,18 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		}
 		file.Close()
 	}
-	call("Coordinator.FinishTask", reply, &TaskReply{})
+	args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
+	re := &TaskReply{}
+	for {
+		fmt.Printf("Task%d finished\n", reply.TaskId)
+
+		ok := call("Coordinator.FinishTask", &args, re)
+		time.Sleep(3 * time.Second)
+		if ok && re.TaskType == NONE {
+			close(done)
+			break
+		}
+	}
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply) {
@@ -164,14 +151,20 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	// output file name format : mr-out-ReduceTaskId
 	//intermediate := []KeyValue{}
 	//filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reply.ReduceTaskId)
+	done := make(chan struct{})
 	go func() {
 		for {
-			args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
-			ok := call("Coordinator.HeartBeat", &args, &struct{}{})
-			if !ok {
-				break
+			select {
+			case <-done:
+				return
+			default:
+				args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
+				ok := call("Coordinator.HeartBeat", &args, &struct{}{})
+				if !ok {
+					break
+				}
+				time.Sleep(10 * time.Second)
 			}
-			time.Sleep(10 * time.Second)
 		}
 	}()
 
@@ -217,5 +210,17 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		i = j
 	}
 	ofile.Close()
-	call("Coordinator.FinishTask", reply, &TaskReply{})
+	args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
+	re := &TaskReply{}
+	for {
+		fmt.Printf("Task %d finished\n", reply.TaskId)
+
+		ok := call("Coordinator.FinishTask", &args, re)
+		time.Sleep(2 * time.Second)
+		if ok && re.TaskType == NONE {
+			close(done)
+			break
+		}
+	}
+
 }
