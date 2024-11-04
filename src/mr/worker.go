@@ -56,6 +56,21 @@ outerLoop:
 			break outerLoop
 		}
 	}
+	for {
+		args := struct{}{}
+		reply := TaskReply{}
+		ok := call("Coordinator.UpdateWorker", &args, &reply)
+		if !ok {
+			break
+		}
+		switch reply.TaskType {
+		case MAP:
+			go single_thread_map(mapf, &reply)
+		case REDUCE:
+			go single_thread_reduce(reducef, &reply)
+		}
+		time.Sleep(10 * time.Second)
+	}
 
 }
 

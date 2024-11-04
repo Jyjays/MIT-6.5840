@@ -33,6 +33,7 @@ type Task struct {
 	TaskType Identity
 	Files    []string
 	Nreduce  int
+	IsEmpty  bool
 }
 type Coordinator struct {
 	mapSize              int
@@ -42,7 +43,7 @@ type Coordinator struct {
 	state                []State
 	identity             []Identity
 	locations            []string
-	tasktable            map[int]Task
+	tasktable            []Task
 	heartbeatTable       *WorkerHeartbeat
 
 	//intermediate         []KeyValue
@@ -72,17 +73,37 @@ func (c *Coordinator) MonitorHeartbeats() {
 		for workerID, lastBeat := range c.heartbeatTable.heartbeats {
 			if time.Since(lastBeat) > c.heartbeatTable.timeout {
 				fmt.Printf("Worker %d is considered failed (last heartbeat at %v)\n", workerID, lastBeat)
-				// 这里可以添加标记失效的逻辑，或从表中移除该Worker
-				delete(c.heartbeatTable.heartbeats, workerID) // 可选：移除超时的Worker
+				c.state[workerID] = Fail
+				task := c.tasktable[workerID]
+				new_worker := c.getWorkableWorker()
+				if new_worker != -1 {
+					c.state[new_worker] = Free
+					c.identity[new_worker] = task.TaskType
+					c.tasktable[new_worker] = task
+					c.UpdateHeartbeat(new_worker)
+					// Send the new task to the new worker
+					//fmt.Printf("Sending task %d to worker %d\n", new_worker, task.TaskId)
+				}
+				delete(c.heartbeatTable.heartbeats, workerID)
+
 			}
 		}
 		c.heartbeatTable.mu.Unlock()
 	}
 }
 
-func (c *Coordinator) getFreeWorker(workerType Identity) int {
+func (c *Coordinator) getWorkableWorker() int {
 	for i, state := range c.state {
-		if state == Free && c.identity[i] == workerType {
+		if (state == Free && c.tasktable[i].IsEmpty) || state == Finish {
+			return i
+		}
+	}
+	return -1
+}
+
+func (c *Coordinator) getFreeWorker() int {
+	for i, state := range c.state {
+		if state == Free {
 			return i
 		}
 	}
@@ -90,7 +111,7 @@ func (c *Coordinator) getFreeWorker(workerType Identity) int {
 }
 
 func (c *Coordinator) makeTask(workerType Identity, files []string, nreduce int) Task {
-	task := Task{}
+	task := Task{IsEmpty: true}
 	task.TaskType = workerType
 	task.Files = files
 	task.Nreduce = nreduce
@@ -98,8 +119,8 @@ func (c *Coordinator) makeTask(workerType Identity, files []string, nreduce int)
 }
 
 func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
-	lock.RLock()
-	defer lock.RUnlock()
+	lock.Lock()
+	defer lock.Unlock()
 	if c.mapAccessalbeSize > 0 {
 		reply.Nreduce = c.reduceSize
 		reply.Files = c.locations[c.mapSize-c.mapAccessalbeSize : c.mapSize-c.mapAccessalbeSize+1]
@@ -131,7 +152,21 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 	}
 	return nil
 }
-
+func (c *Coordinator) UpdateWorker(args *struct{}, reply *TaskReply) error {
+	lock.Lock()
+	defer lock.Unlock()
+	workerID := c.getFreeWorker()
+	if workerID == -1 {
+		reply.TaskType = NONE
+	}
+	reply.TaskType = c.identity[workerID]
+	reply.Files = c.tasktable[workerID].Files
+	reply.Nreduce = c.tasktable[workerID].Nreduce
+	reply.TaskId = workerID
+	c.state[workerID] = Working
+	c.UpdateHeartbeat(workerID)
+	return nil
+}
 func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 	lock.Lock()
 	defer lock.Unlock()
@@ -143,10 +178,7 @@ func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
 	lock.Lock()
 	defer lock.Unlock()
-	if c.state[args.TaskId] == Fail {
-		c.state[args.TaskId] = Working
-	}
-
+	c.UpdateHeartbeat(args.TaskId)
 	return nil
 }
 
@@ -175,29 +207,6 @@ func (c *Coordinator) Done() bool {
 	return true
 }
 
-// func GetM_andSplits(file []string, blocksizeMB int) (int, [][]string) {
-// 	blocksize := blocksizeMB * 1024 * 1024
-// 	blocks := [][]string{}
-// 	currentblock := []string{}
-// 	totalsize := 0
-// 	currentsize := 0
-// 	for _, content := range file {
-// 		totalsize += len(content)
-// 		contentsize := len(content)
-// 		if currentsize+contentsize > blocksize {
-// 			blocks = append(blocks, currentblock)
-// 			currentblock = []string{}
-// 			currentsize = 0
-// 		}
-// 		currentblock = append(currentblock, content)
-// 		currentsize += contentsize
-// 	}
-// 	if len(currentblock) > 0 {
-// 		blocks = append(blocks, currentblock)
-// 	}
-// 	return len(blocks), blocks
-// }
-
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
@@ -225,6 +234,12 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	fmt.Println("worker_size: ", worker_size)
 	c.state = make([]State, worker_size)
 	c.identity = make([]Identity, worker_size)
+	c.tasktable = make([]Task, worker_size)
+	for i := 0; i < worker_size; i++ {
+		c.state[i] = Free
+		c.identity[i] = NONE
+	}
+
 	c.locations = file_names
 
 	c.heartbeatTable = NewWorkerHeartbeat(20 * time.Second)
