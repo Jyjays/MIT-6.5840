@@ -52,25 +52,26 @@ outerLoop:
 			go single_thread_map(mapf, &reply)
 		case REDUCE:
 			go single_thread_reduce(reducef, &reply)
+
 		case NONE:
 			break outerLoop
 		}
 	}
-	for {
-		args := struct{}{}
-		reply := TaskReply{}
-		ok := call("Coordinator.UpdateWorker", &args, &reply)
-		if !ok {
-			break
-		}
-		switch reply.TaskType {
-		case MAP:
-			go single_thread_map(mapf, &reply)
-		case REDUCE:
-			go single_thread_reduce(reducef, &reply)
-		}
-		time.Sleep(10 * time.Second)
-	}
+	// for {
+	// 	args := struct{}{}
+	// 	reply := TaskReply{}
+	// 	ok := call("Coordinator.UpdateWorker", &args, &reply)
+	// 	if !ok {
+	// 		break
+	// 	}
+	// 	switch reply.TaskType {
+	// 	case MAP:
+	// 		go single_thread_map(mapf, &reply)
+	// 	case REDUCE:
+	// 		go single_thread_reduce(reducef, &reply)
+	// 	}
+	// 	time.Sleep(10 * time.Second)
+	// }
 
 }
 
@@ -182,8 +183,8 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 			}
 		}
 	}()
-
-	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", reply.TaskId))
+	inter_file_id := reply.TaskId - reply.Nreduce
+	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", inter_file_id))
 	if err != nil {
 		log.Fatalf("cannot read %v", reply.TaskId)
 	}
@@ -204,7 +205,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		file.Close()
 	}
 	sort.Sort(ByKey(intermediate))
-	oname := fmt.Sprintf("mr-out-%d", reply.TaskId)
+	oname := fmt.Sprintf("mr-out-%d", inter_file_id)
 	ofile, _ := os.Create(oname)
 
 	i := 0

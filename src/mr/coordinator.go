@@ -29,6 +29,9 @@ const (
 
 var lock sync.RWMutex
 
+// state_lock is used to protect the task state
+var state_lock sync.Mutex
+
 type Task struct {
 	TaskType Identity
 	Files    []string
@@ -69,7 +72,7 @@ func (c *Coordinator) UpdateHeartbeat(workerID int) {
 func (c *Coordinator) MonitorHeartbeats() {
 	for {
 		time.Sleep(15 * time.Second)
-		c.heartbeatTable.mu.Lock()
+		lock.Lock()
 		for workerID, lastBeat := range c.heartbeatTable.heartbeats {
 			if time.Since(lastBeat) > c.heartbeatTable.timeout {
 				fmt.Printf("Worker %d is considered failed (last heartbeat at %v)\n", workerID, lastBeat)
@@ -88,7 +91,7 @@ func (c *Coordinator) MonitorHeartbeats() {
 
 			}
 		}
-		c.heartbeatTable.mu.Unlock()
+		lock.Unlock()
 	}
 }
 
@@ -118,6 +121,20 @@ func (c *Coordinator) makeTask(workerType Identity, files []string, nreduce int)
 	return task
 }
 
+// Wait all the type of task to be finished
+func (c *Coordinator) WaitTask(taskType Identity) bool {
+	all_finished := false
+	for i, identity := range c.identity {
+		if identity == taskType {
+			for c.state[i] != Finish {
+				time.Sleep(1 * time.Second)
+			}
+		}
+		all_finished = true
+	}
+	return all_finished
+}
+
 func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 	lock.Lock()
 	defer lock.Unlock()
@@ -134,7 +151,12 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 		c.UpdateHeartbeat(reply.TaskId)
 		c.tasktable[reply.TaskId] = c.makeTask(MAP, reply.Files, c.reduceSize)
 	} else if c.reduceAccessableSize > 0 {
-		reply.Nreduce = c.reduceSize
+		ok := c.WaitTask(MAP)
+		if !ok {
+			reply.TaskType = NONE
+			return nil
+		}
+		reply.Nreduce = len(c.locations)
 		reply.Files = []string{}
 		reply.TaskType = REDUCE
 		//reply.TaskSize = len(c.locations)
@@ -147,7 +169,9 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 		c.reduceAccessableSize--
 		c.UpdateHeartbeat(reply.TaskId)
 		c.tasktable[reply.TaskId] = c.makeTask(REDUCE, reply.Files, c.reduceSize)
+
 	} else {
+		c.WaitTask(REDUCE)
 		reply.TaskType = NONE
 	}
 	return nil
@@ -158,6 +182,7 @@ func (c *Coordinator) UpdateWorker(args *struct{}, reply *TaskReply) error {
 	workerID := c.getFreeWorker()
 	if workerID == -1 {
 		reply.TaskType = NONE
+		return nil
 	}
 	reply.TaskType = c.identity[workerID]
 	reply.Files = c.tasktable[workerID].Files
@@ -168,8 +193,8 @@ func (c *Coordinator) UpdateWorker(args *struct{}, reply *TaskReply) error {
 	return nil
 }
 func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
-	lock.Lock()
-	defer lock.Unlock()
+	state_lock.Lock()
+	defer state_lock.Unlock()
 	c.state[args.TaskId] = Finish
 	reply.TaskType = NONE
 	return nil
@@ -243,7 +268,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c.locations = file_names
 
 	c.heartbeatTable = NewWorkerHeartbeat(20 * time.Second)
-	go c.MonitorHeartbeats()
+	//go c.MonitorHeartbeats()
 
 	c.server()
 	return &c
