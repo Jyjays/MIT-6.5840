@@ -26,13 +26,14 @@ type ExampleReply struct {
 
 // Add your RPC definitions here.
 type TaskArgs struct {
+	WorkerId int
 	TaskType Identity
 	Files    []string
 	Nreduce  int
 	TaskId   int
 }
 type TaskReply struct {
-	//TaskSize int
+	WorkerId int
 	TaskType Identity
 	Files    []string
 	Nreduce  int

@@ -38,6 +38,25 @@ type Task struct {
 	Nreduce  int
 	IsEmpty  bool
 }
+
+type WorkerList struct {
+	last_assign     int
+	workerId        []int
+	work_task_table map[int][]int
+}
+
+var workerList WorkerList
+
+func (w *WorkerList) getWorker() int {
+	l := len(w.workerId)
+	w.last_assign = (w.last_assign + 1) % l
+	return w.workerId[w.last_assign]
+}
+
+func (w *WorkerList) addTask(workerId int, taskId int) {
+	w.work_task_table[workerId] = append(w.work_task_table[workerId], taskId)
+}
+
 type Coordinator struct {
 	mapSize              int
 	reduceSize           int
@@ -48,7 +67,6 @@ type Coordinator struct {
 	locations            []string
 	tasktable            []Task
 	heartbeatTable       *WorkerHeartbeat
-
 	//intermediate         []KeyValue
 }
 
@@ -64,35 +82,9 @@ func NewWorkerHeartbeat(timeout time.Duration) *WorkerHeartbeat {
 		timeout:    timeout,
 	}
 }
-func (c *Coordinator) UpdateHeartbeat(workerID int) {
-	c.heartbeatTable.mu.Lock()
-	defer c.heartbeatTable.mu.Unlock()
-	c.heartbeatTable.heartbeats[workerID] = time.Now()
-}
-func (c *Coordinator) MonitorHeartbeats() {
-	for {
-		time.Sleep(15 * time.Second)
-		lock.Lock()
-		for workerID, lastBeat := range c.heartbeatTable.heartbeats {
-			if time.Since(lastBeat) > c.heartbeatTable.timeout {
-				fmt.Printf("Worker %d is considered failed (last heartbeat at %v)\n", workerID, lastBeat)
-				c.state[workerID] = Fail
-				task := c.tasktable[workerID]
-				new_worker := c.getWorkableWorker()
-				if new_worker != -1 {
-					c.state[new_worker] = Free
-					c.identity[new_worker] = task.TaskType
-					c.tasktable[new_worker] = task
-					c.UpdateHeartbeat(new_worker)
-					// Send the new task to the new worker
-					//fmt.Printf("Sending task %d to worker %d\n", new_worker, task.TaskId)
-				}
-				delete(c.heartbeatTable.heartbeats, workerID)
 
-			}
-		}
-		lock.Unlock()
-	}
+func (c *Coordinator) MonitorHeartbeats() {
+
 }
 
 func (c *Coordinator) getWorkableWorker() int {
@@ -102,6 +94,13 @@ func (c *Coordinator) getWorkableWorker() int {
 		}
 	}
 	return -1
+}
+func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
+	newid := len(workerList.workerId)
+	workerList.workerId = append(workerList.workerId, newid)
+	reply.WorkerId = newid
+	workerList.work_task_table[args.WorkerId] = []int{}
+	return nil
 }
 
 func (c *Coordinator) getFreeWorker() int {
@@ -148,8 +147,8 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 		c.identity[c.mapSize-c.mapAccessalbeSize] = MAP
 
 		c.mapAccessalbeSize--
-		c.UpdateHeartbeat(reply.TaskId)
 		c.tasktable[reply.TaskId] = c.makeTask(MAP, reply.Files, c.reduceSize)
+		//workerList.addTask(args.WorkerId, reply.TaskId)
 	} else if c.reduceAccessableSize > 0 {
 		ok := c.WaitTask(MAP)
 		if !ok {
@@ -167,43 +166,33 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 		c.identity[c.mapSize+c.reduceSize-c.reduceAccessableSize] = REDUCE
 
 		c.reduceAccessableSize--
-		c.UpdateHeartbeat(reply.TaskId)
 		c.tasktable[reply.TaskId] = c.makeTask(REDUCE, reply.Files, c.reduceSize)
-
 	} else {
 		c.WaitTask(REDUCE)
 		reply.TaskType = NONE
 	}
+	workerList.addTask(args.WorkerId, reply.TaskId)
 	return nil
 }
 func (c *Coordinator) UpdateWorker(args *struct{}, reply *TaskReply) error {
 	lock.Lock()
 	defer lock.Unlock()
-	workerID := c.getFreeWorker()
-	if workerID == -1 {
-		reply.TaskType = NONE
-		return nil
-	}
-	reply.TaskType = c.identity[workerID]
-	reply.Files = c.tasktable[workerID].Files
-	reply.Nreduce = c.tasktable[workerID].Nreduce
-	reply.TaskId = workerID
-	c.state[workerID] = Working
-	c.UpdateHeartbeat(workerID)
+
 	return nil
 }
 func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 	state_lock.Lock()
 	defer state_lock.Unlock()
 	c.state[args.TaskId] = Finish
+	// workerList.work_task_table[args.WorkerId] = workerList.work_task_table[args.WorkerId][1:]
 	reply.TaskType = NONE
 	return nil
 }
 
 func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
-	lock.Lock()
-	defer lock.Unlock()
-	c.UpdateHeartbeat(args.TaskId)
+	c.heartbeatTable.mu.Lock()
+	defer c.heartbeatTable.mu.Unlock()
+	c.heartbeatTable.heartbeats[args.WorkerId] = time.Now()
 	return nil
 }
 
@@ -235,6 +224,13 @@ func (c *Coordinator) Done() bool {
 // create a Coordinator.
 // main/mrcoordinator.go calls this function.
 // nReduce is the number of reduce tasks to use.
+func makeWorkerList() *WorkerList {
+	w := WorkerList{}
+	w.workerId = []int{}
+	w.work_task_table = make(map[int][]int)
+	return &w
+}
+
 func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	c := Coordinator{}
 	// file_names, err := filepath.Glob(files[0]) // Expand the wildcard here
@@ -269,6 +265,7 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 
 	c.heartbeatTable = NewWorkerHeartbeat(20 * time.Second)
 	//go c.MonitorHeartbeats()
+	workerList = *makeWorkerList()
 
 	c.server()
 	return &c

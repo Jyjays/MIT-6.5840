@@ -37,11 +37,31 @@ func ihash(key string) int {
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-
+	heartbeatArgs := TaskArgs{}
+	heartbeatReply := TaskReply{}
+	call("Coordinator.AddWorker", &heartbeatArgs, &heartbeatReply)
+	heartbeatArgs.WorkerId = heartbeatReply.WorkerId
+	heartbeatReply = TaskReply{}
 	// Your worker implementation here.
-outerLoop:
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+
+				ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
+				if !ok {
+					return
+				}
+				time.Sleep(10 * time.Second)
+			}
+		}
+	}()
+
 	for {
-		args := struct{}{}
+		args := TaskArgs{WorkerId: heartbeatArgs.WorkerId}
 		reply := TaskReply{}
 		ok := call("Coordinator.GetTask", &args, &reply)
 		if !ok {
@@ -52,26 +72,11 @@ outerLoop:
 			go single_thread_map(mapf, &reply)
 		case REDUCE:
 			go single_thread_reduce(reducef, &reply)
-
 		case NONE:
-			break outerLoop
+			// Continue call the coordinator to get the task in case of any worker is down
+			continue
 		}
 	}
-	// for {
-	// 	args := struct{}{}
-	// 	reply := TaskReply{}
-	// 	ok := call("Coordinator.UpdateWorker", &args, &reply)
-	// 	if !ok {
-	// 		break
-	// 	}
-	// 	switch reply.TaskType {
-	// 	case MAP:
-	// 		go single_thread_map(mapf, &reply)
-	// 	case REDUCE:
-	// 		go single_thread_reduce(reducef, &reply)
-	// 	}
-	// 	time.Sleep(10 * time.Second)
-	// }
 
 }
 
@@ -97,23 +102,6 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
-				ok := call("Coordinator.HeartBeat", &args, &struct{}{})
-				if !ok {
-					return
-				}
-				time.Sleep(10 * time.Second)
-			}
-		}
-	}()
-
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
 		file, err := os.Open(filename)
@@ -146,18 +134,18 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 		}
 		file.Close()
 	}
-	args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP}
+	args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP, WorkerId: reply.WorkerId}
 	re := &TaskReply{}
 	for {
 		fmt.Printf("Task%d finished\n", reply.TaskId)
-
 		ok := call("Coordinator.FinishTask", &args, re)
 		time.Sleep(3 * time.Second)
 		if ok && re.TaskType == NONE {
-			close(done)
+
 			break
 		}
 	}
+
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply) {
@@ -167,22 +155,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	// output file name format : mr-out-ReduceTaskId
 	//intermediate := []KeyValue{}
 	//filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reply.ReduceTaskId)
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
-				ok := call("Coordinator.HeartBeat", &args, &struct{}{})
-				if !ok {
-					break
-				}
-				time.Sleep(10 * time.Second)
-			}
-		}
-	}()
+
 	inter_file_id := reply.TaskId - reply.Nreduce
 	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", inter_file_id))
 	if err != nil {
@@ -226,7 +199,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		i = j
 	}
 	ofile.Close()
-	args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE}
+	args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE, WorkerId: reply.WorkerId}
 	re := &TaskReply{}
 	for {
 		fmt.Printf("Task %d finished\n", reply.TaskId)
@@ -234,9 +207,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		ok := call("Coordinator.FinishTask", &args, re)
 		time.Sleep(2 * time.Second)
 		if ok && re.TaskType == NONE {
-			close(done)
 			break
 		}
 	}
-
 }
