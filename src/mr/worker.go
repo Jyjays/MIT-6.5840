@@ -69,9 +69,9 @@ func Worker(mapf func(string, string) []KeyValue,
 		}
 		switch reply.TaskType {
 		case MAP:
-			go single_thread_map(mapf, &reply)
+			single_thread_map(mapf, &reply)
 		case REDUCE:
-			go single_thread_reduce(reducef, &reply)
+			single_thread_reduce(reducef, &reply)
 		case NONE:
 			// Continue call the coordinator to get the task in case of any worker is down
 			continue
