@@ -27,30 +27,9 @@ const (
 	NONE
 )
 
-var lock sync.RWMutex
-
-// state_lock is used to protect the task state
-var state_lock sync.Mutex
-
-type Task struct {
-	TaskType Identity
-	Files    []string
-	Nreduce  int
-	IsEmpty  bool
-}
-
 type WorkerList struct {
-	last_assign     int
 	workerId        []int
 	work_task_table map[int][]int
-}
-
-var workerList WorkerList
-
-func (w *WorkerList) getWorker() int {
-	l := len(w.workerId)
-	w.last_assign = (w.last_assign + 1) % l
-	return w.workerId[w.last_assign]
 }
 
 func (w *WorkerList) addTask(workerId int, taskId int) {
@@ -58,21 +37,23 @@ func (w *WorkerList) addTask(workerId int, taskId int) {
 }
 
 type Coordinator struct {
+	lock                 sync.Mutex
 	mapSize              int
 	reduceSize           int
 	mapAccessalbeSize    int
 	reduceAccessableSize int
+	state_lock           sync.Mutex
 	state                []State
 	identity             []Identity
 	locations            []string
-	tasktable            []Task
 	heartbeatTable       *WorkerHeartbeat
+	workerList           WorkerList
 	//intermediate         []KeyValue
 }
 
 type WorkerHeartbeat struct {
 	mu         sync.Mutex
-	heartbeats map[int]time.Time // workerID -> last heartbeat timestamp
+	heartbeats map[int]time.Time // TaskId -> last heartbeat timestamp
 	timeout    time.Duration
 }
 
@@ -83,41 +64,42 @@ func NewWorkerHeartbeat(timeout time.Duration) *WorkerHeartbeat {
 	}
 }
 
-func (c *Coordinator) MonitorHeartbeats() {
-
-}
-
-func (c *Coordinator) getWorkableWorker() int {
-	for i, state := range c.state {
-		if (state == Free && c.tasktable[i].IsEmpty) || state == Finish {
-			return i
+func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
+	c.heartbeatTable.mu.Lock()
+	defer c.heartbeatTable.mu.Unlock()
+	for taskId := range c.workerList.work_task_table[args.WorkerId] {
+		if c.state[taskId] != Finish {
+			c.heartbeatTable.heartbeats[taskId] = time.Now()
 		}
 	}
-	return -1
-}
-func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
-	newid := len(workerList.workerId)
-	workerList.workerId = append(workerList.workerId, newid)
-	reply.WorkerId = newid
-	workerList.work_task_table[args.WorkerId] = []int{}
 	return nil
 }
 
-func (c *Coordinator) getFreeWorker() int {
-	for i, state := range c.state {
-		if state == Free {
-			return i
+func (c *Coordinator) MonitorHeartbeats() {
+	for {
+		time.Sleep(15 * time.Second)
+		c.heartbeatTable.mu.Lock()
+		for taskId, lastHeartbeat := range c.heartbeatTable.heartbeats {
+			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout {
+				c.state_lock.Lock()
+				if c.state[taskId] != Finish {
+					c.state[taskId] = Free
+				}
+				c.state_lock.Unlock()
+			}
 		}
+		c.heartbeatTable.mu.Unlock()
 	}
-	return -1
 }
 
-func (c *Coordinator) makeTask(workerType Identity, files []string, nreduce int) Task {
-	task := Task{IsEmpty: true}
-	task.TaskType = workerType
-	task.Files = files
-	task.Nreduce = nreduce
-	return task
+func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
+	newid := len(c.workerList.workerId)
+	c.workerList.workerId = append(c.workerList.workerId, newid)
+	reply.WorkerId = newid
+	c.workerList.work_task_table[args.WorkerId] = []int{}
+	return nil
 }
 
 // Wait all the type of task to be finished
@@ -134,20 +116,36 @@ func (c *Coordinator) WaitTask(taskType Identity) bool {
 	return all_finished
 }
 
+func (c *Coordinator) getAccessiableWorker(taskType Identity) int {
+	c.state_lock.Lock()
+	defer c.state_lock.Unlock()
+	for i, state := range c.state {
+		if state == Free && c.identity[i] == taskType {
+			return i
+		}
+	}
+	return -1
+}
+
 func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
-	lock.Lock()
-	defer lock.Unlock()
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	if c.mapAccessalbeSize > 0 {
 		reply.Nreduce = c.reduceSize
-		reply.Files = c.locations[c.mapSize-c.mapAccessalbeSize : c.mapSize-c.mapAccessalbeSize+1]
+		reply.TaskId = c.getAccessiableWorker(MAP)
+		if reply.TaskId == -1 {
+			reply.TaskType = NONE
+			return nil
+		}
+		reply.Files = c.locations[reply.TaskId : reply.TaskId+1]
 		reply.TaskType = MAP
-		reply.TaskId = c.mapSize - c.mapAccessalbeSize
-
-		c.state[c.mapSize-c.mapAccessalbeSize] = Working
-		c.identity[c.mapSize-c.mapAccessalbeSize] = MAP
-
+		{
+			c.state_lock.Lock()
+			defer c.state_lock.Unlock()
+			c.state[reply.TaskId] = Working
+		}
+		c.identity[reply.TaskId] = MAP
 		c.mapAccessalbeSize--
-		c.tasktable[reply.TaskId] = c.makeTask(MAP, reply.Files, c.reduceSize)
 		//workerList.addTask(args.WorkerId, reply.TaskId)
 	} else if c.reduceAccessableSize > 0 {
 		ok := c.WaitTask(MAP)
@@ -155,44 +153,37 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 			reply.TaskType = NONE
 			return nil
 		}
+		reply.TaskId = c.getAccessiableWorker(REDUCE)
+		if reply.TaskId == -1 {
+			reply.TaskType = NONE
+			return nil
+		}
 		reply.Nreduce = len(c.locations)
 		reply.Files = []string{}
 		reply.TaskType = REDUCE
-		//reply.TaskSize = len(c.locations)
-		reply.TaskId = c.reduceSize - c.reduceAccessableSize + c.mapSize
-
-		//fmt.Println("machine: ", c.mapSize+c.reduceSize-c.reduceAccessableSize)
-		c.state[c.mapSize+c.reduceSize-c.reduceAccessableSize] = Working
-		c.identity[c.mapSize+c.reduceSize-c.reduceAccessableSize] = REDUCE
+		{
+			c.state_lock.Lock()
+			defer c.state_lock.Unlock()
+			c.state[reply.TaskId] = Working
+		}
+		c.identity[reply.TaskId] = REDUCE
 
 		c.reduceAccessableSize--
-		c.tasktable[reply.TaskId] = c.makeTask(REDUCE, reply.Files, c.reduceSize)
 	} else {
 		c.WaitTask(REDUCE)
 		reply.TaskType = NONE
+		return nil
 	}
-	workerList.addTask(args.WorkerId, reply.TaskId)
+	c.workerList.addTask(args.WorkerId, reply.TaskId)
 	return nil
 }
-func (c *Coordinator) UpdateWorker(args *struct{}, reply *TaskReply) error {
-	lock.Lock()
-	defer lock.Unlock()
 
-	return nil
-}
 func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
-	state_lock.Lock()
-	defer state_lock.Unlock()
+	c.state_lock.Lock()
+	defer c.state_lock.Unlock()
 	c.state[args.TaskId] = Finish
 	// workerList.work_task_table[args.WorkerId] = workerList.work_task_table[args.WorkerId][1:]
 	reply.TaskType = NONE
-	return nil
-}
-
-func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
-	c.heartbeatTable.mu.Lock()
-	defer c.heartbeatTable.mu.Unlock()
-	c.heartbeatTable.heartbeats[args.WorkerId] = time.Now()
 	return nil
 }
 
@@ -213,6 +204,8 @@ func (c *Coordinator) server() {
 // main/mrcoordinator.go calls Done() periodically to find out
 // if the entire job has finished.
 func (c *Coordinator) Done() bool {
+	c.state_lock.Lock()
+	defer c.state_lock.Unlock()
 	for _, state := range c.state {
 		if state != Finish {
 			return false
@@ -254,19 +247,18 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	worker_size := M + nReduce
 	fmt.Println("worker_size: ", worker_size)
 	c.state = make([]State, worker_size)
+	// The fist M workers are map workers, the rest are reduce workers
 	c.identity = make([]Identity, worker_size)
-	c.tasktable = make([]Task, worker_size)
-	for i := 0; i < worker_size; i++ {
-		c.state[i] = Free
-		c.identity[i] = NONE
+	for i := 0; i < M; i++ {
+		c.identity[i] = MAP
 	}
-
+	for i := M; i < worker_size; i++ {
+		c.identity[i] = REDUCE
+	}
 	c.locations = file_names
-
-	c.heartbeatTable = NewWorkerHeartbeat(20 * time.Second)
-	//go c.MonitorHeartbeats()
-	workerList = *makeWorkerList()
-
+	c.heartbeatTable = NewWorkerHeartbeat(10 * time.Second)
+	c.workerList = *makeWorkerList()
+	go c.MonitorHeartbeats()
 	c.server()
 	return &c
 }
