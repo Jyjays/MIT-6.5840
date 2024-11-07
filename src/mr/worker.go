@@ -54,7 +54,7 @@ func Worker(mapf func(string, string) []KeyValue,
 				if !ok {
 					return
 				}
-				time.Sleep(10 * time.Second)
+				time.Sleep(7 * time.Second)
 			}
 		}
 	}()
@@ -141,9 +141,8 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 	for {
 		fmt.Printf("Task%d finished\n", reply.TaskId)
 		ok := call("Coordinator.FinishTask", &args, re)
-		time.Sleep(3 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 		if ok && re.TaskType == NONE {
-
 			break
 		}
 	}
@@ -207,7 +206,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		fmt.Printf("Task %d finished\n", reply.TaskId)
 
 		ok := call("Coordinator.FinishTask", &args, re)
-		time.Sleep(2 * time.Second)
+		time.Sleep(100 * time.Millisecond)
 		if ok && re.TaskType == NONE {
 			break
 		}

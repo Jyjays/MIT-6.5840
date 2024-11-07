@@ -1,7 +1,6 @@
 package mr
 
 import (
-	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -40,7 +39,7 @@ type Coordinator struct {
 	lock                 sync.Mutex
 	mapSize              int
 	reduceSize           int
-	mapAccessalbeSize    int
+	mapAccessableSize    int
 	reduceAccessableSize int
 	state_lock           sync.Mutex
 	state                []State
@@ -67,23 +66,33 @@ func NewWorkerHeartbeat(timeout time.Duration) *WorkerHeartbeat {
 func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
 	c.heartbeatTable.mu.Lock()
 	defer c.heartbeatTable.mu.Unlock()
-	for taskId := range c.workerList.work_task_table[args.WorkerId] {
+	//fmt.Printf("workId %d:", args.WorkerId)
+	for _, taskId := range c.workerList.work_task_table[args.WorkerId] {
 		if c.state[taskId] != Finish {
+			//fmt.Print(taskId)
+			//fmt.Print(" ")
 			c.heartbeatTable.heartbeats[taskId] = time.Now()
 		}
 	}
+	//fmt.Println(" ")
 	return nil
 }
 
 func (c *Coordinator) MonitorHeartbeats() {
 	for {
-		time.Sleep(15 * time.Second)
+		time.Sleep(10 * time.Second)
 		c.heartbeatTable.mu.Lock()
 		for taskId, lastHeartbeat := range c.heartbeatTable.heartbeats {
 			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout {
 				c.state_lock.Lock()
-				if c.state[taskId] != Finish {
+				if c.state[taskId] != Finish && c.state[taskId] != Free {
 					c.state[taskId] = Free
+					switch c.identity[taskId] {
+					case MAP:
+						c.mapAccessableSize++
+					case REDUCE:
+						c.reduceAccessableSize++
+					}
 				}
 				c.state_lock.Unlock()
 			}
@@ -104,16 +113,21 @@ func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
 
 // Wait all the type of task to be finished
 func (c *Coordinator) WaitTask(taskType Identity) bool {
-	all_finished := false
+
 	for i, identity := range c.identity {
+		// if c.state[i] == Free && identity == taskType {
+		// 	return false
+		// }
 		if identity == taskType {
-			for c.state[i] != Finish {
-				time.Sleep(1 * time.Second)
+			// for c.state[i] != Finish {
+			// 	time.Sleep(1 * time.Second)
+			// }
+			if c.state[i] != Finish {
+				return false
 			}
 		}
-		all_finished = true
 	}
-	return all_finished
+	return true
 }
 
 func (c *Coordinator) getAccessiableWorker(taskType Identity) int {
@@ -130,7 +144,7 @@ func (c *Coordinator) getAccessiableWorker(taskType Identity) int {
 func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if c.mapAccessalbeSize > 0 {
+	if c.mapAccessableSize > 0 {
 		reply.Nreduce = c.reduceSize
 		reply.TaskId = c.getAccessiableWorker(MAP)
 		if reply.TaskId == -1 {
@@ -145,7 +159,9 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 			c.state[reply.TaskId] = Working
 		}
 		c.identity[reply.TaskId] = MAP
-		c.mapAccessalbeSize--
+		//fmt.Printf("MapTaskId: %d added\n", reply.TaskId)
+		c.heartbeatTable.heartbeats[reply.TaskId] = time.Now()
+		c.mapAccessableSize--
 		//workerList.addTask(args.WorkerId, reply.TaskId)
 	} else if c.reduceAccessableSize > 0 {
 		ok := c.WaitTask(MAP)
@@ -167,7 +183,8 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 			c.state[reply.TaskId] = Working
 		}
 		c.identity[reply.TaskId] = REDUCE
-
+		c.heartbeatTable.heartbeats[reply.TaskId] = time.Now()
+		//fmt.Printf("ReduceTaskId: %d added\n", reply.TaskId)
 		c.reduceAccessableSize--
 	} else {
 		c.WaitTask(REDUCE)
@@ -181,7 +198,9 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 	c.state_lock.Lock()
 	defer c.state_lock.Unlock()
-	c.state[args.TaskId] = Finish
+	if c.state[args.TaskId] != Free {
+		c.state[args.TaskId] = Finish
+	}
 	// workerList.work_task_table[args.WorkerId] = workerList.work_task_table[args.WorkerId][1:]
 	reply.TaskType = NONE
 	return nil
@@ -240,12 +259,9 @@ func MakeCoordinator(files []string, nReduce int) *Coordinator {
 	}
 
 	M := len(file_names)
-	fmt.Println("file_names: ", file_names)
-	c.mapSize, c.mapAccessalbeSize = M, M
-	fmt.Println("mapsize, mapAccessableSize: ", c.mapSize, c.mapAccessalbeSize)
+	c.mapSize, c.mapAccessableSize = M, M
 	c.reduceSize, c.reduceAccessableSize = nReduce, nReduce
 	worker_size := M + nReduce
-	fmt.Println("worker_size: ", worker_size)
 	c.state = make([]State, worker_size)
 	// The fist M workers are map workers, the rest are reduce workers
 	c.identity = make([]Identity, worker_size)
