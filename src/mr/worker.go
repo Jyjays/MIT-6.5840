@@ -10,7 +10,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"time"
 )
 
 // Map functions return a slice of KeyValue.
@@ -57,38 +56,6 @@ func Worker(mapf func(string, string) []KeyValue,
 	call("Coordinator.AddWorker", &heartbeatArgs, &heartbeatReply)
 	heartbeatArgs.WorkerId = heartbeatReply.WorkerId
 	heartbeatReply = TaskReply{}
-	// Your worker implementation here.
-	done := make(chan struct{})
-	go func() {
-		for {
-			select {
-			case <-done:
-				return
-			default:
-				ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
-				if !ok {
-					return
-				}
-				time.Sleep(10 * time.Second)
-			}
-		}
-	}()
-	// done := make(chan struct{})
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-done:
-	// 			return
-	// 		default:
-	// 			ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
-	// 			if !ok {
-	// 				return
-	// 			}
-	// 			time.Sleep(7 * time.Second)
-	// 		}
-	// 	}
-	// }()
-
 	for {
 		args := TaskArgs{WorkerId: heartbeatArgs.WorkerId}
 		reply := TaskReply{}
@@ -162,7 +129,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 	for _, kv := range intermediate {
 		reduceTask := ihash(kv.Key) % reply.Nreduce
 		// Temporarily name
-		filename := fmt.Sprintf("mr-%d-%d-%d", reply.TaskId, reduceTask, reply.WorkerId)
+		filename := fmt.Sprintf("inter-%d-%d-%d", reply.TaskId, reduceTask, reply.WorkerId)
 		_, err := os.Stat(filename)
 		fileAlreadyExists := !os.IsNotExist(err)
 		file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -191,9 +158,9 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 		}
 		*file_name_list = []string{}
 		ok := call("Coordinator.FinishTask", &args, re)
-		time.Sleep(3 * time.Second)
-		if ok && re.TaskType == NONE {
-
+		if re.WorkerState == Fail {
+			os.Exit(1)
+		} else if ok && re.WorkerState == Finish {
 			break
 		}
 
@@ -202,15 +169,15 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply, file_name_list *[]string) {
 	inter_file_id := reply.TaskId - reply.Nreduce
-	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", inter_file_id))
+	inter_files, err := filepath.Glob(fmt.Sprintf("inter-*-%d", inter_file_id))
+	//fmt.Printf("inter_files: %v\n", inter_files)
 	if err != nil {
-		log.Fatalf("cannot read %v", reply.TaskId)
+		log.Fatalf("reduce :cannot read %v", reply.TaskId)
 	}
 
-	// 收集中间数据
 	intermediate := []KeyValue{}
 	for _, filename := range inter_files {
-		time.Sleep(100 * time.Millisecond)
+		//time.Sleep(100 * time.Millisecond)
 		file, err := os.Open(filename)
 		if err != nil {
 			log.Fatalf("cannot open %v", filename)
@@ -226,7 +193,6 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		file.Close()
 	}
 
-	// 排序中间数据
 	sort.Sort(ByKey(intermediate))
 	oname := fmt.Sprintf("mr-out-%d-%d", inter_file_id, reply.WorkerId)
 	ofile, _ := os.Create(oname)
@@ -260,8 +226,9 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		}
 		*file_name_list = []string{}
 		ok := call("Coordinator.FinishTask", &args, re)
-		time.Sleep(2 * time.Second)
-		if ok && re.TaskType == NONE {
+		if re.WorkerState == Fail {
+			os.Exit(1)
+		} else if ok && re.WorkerState == Finish {
 			break
 		}
 
