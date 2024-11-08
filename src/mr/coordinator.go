@@ -28,12 +28,16 @@ const (
 
 type WorkerList struct {
 	workerId        []int
+	workerState     []State
 	work_task_table map[int][]int
 }
 
 func (w *WorkerList) addTask(workerId int, taskId int) {
 	w.work_task_table[workerId] = append(w.work_task_table[workerId], taskId)
+	w.workerState[workerId] = Working
 }
+
+var is_done = false
 
 type Coordinator struct {
 	lock                 sync.Mutex
@@ -64,13 +68,28 @@ func NewWorkerHeartbeat(timeout time.Duration) *WorkerHeartbeat {
 }
 
 func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
+	c.lock.Lock()
+	defer c.lock.Unlock()
 	c.heartbeatTable.mu.Lock()
 	defer c.heartbeatTable.mu.Unlock()
+	if is_done {
+		reply.WorkerState = Finish
+		return nil
+	}
+	if c.workerList.workerState[args.WorkerId] == Fail {
+		return nil
+	}
 	//fmt.Printf("workId %d:", args.WorkerId)
 	for _, taskId := range c.workerList.work_task_table[args.WorkerId] {
 		if c.state[taskId] != Finish {
 			//fmt.Print(taskId)
 			//fmt.Print(" ")
+			lastHeartbeat := c.heartbeatTable.heartbeats[taskId]
+			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout {
+				c.workerList.workerState[args.WorkerId] = Fail
+				reply.WorkerState = Fail
+				break
+			}
 			c.heartbeatTable.heartbeats[taskId] = time.Now()
 		}
 	}
@@ -80,7 +99,7 @@ func (c *Coordinator) HeartBeat(args *TaskArgs, reply *TaskReply) error {
 
 func (c *Coordinator) MonitorHeartbeats() {
 	for {
-		time.Sleep(10 * time.Second)
+		time.Sleep(5 * time.Second)
 		c.heartbeatTable.mu.Lock()
 		for taskId, lastHeartbeat := range c.heartbeatTable.heartbeats {
 			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout {
@@ -107,6 +126,7 @@ func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
 	newid := len(c.workerList.workerId)
 	c.workerList.workerId = append(c.workerList.workerId, newid)
 	reply.WorkerId = newid
+	c.workerList.workerState = append(c.workerList.workerState, Free)
 	c.workerList.work_task_table[args.WorkerId] = []int{}
 	return nil
 }
@@ -142,8 +162,18 @@ func (c *Coordinator) getAccessiableWorker(taskType Identity) int {
 }
 
 func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
+	if is_done {
+		reply.TaskType = NONE
+		reply.WorkerState = Finish
+		return nil
+	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
+	if c.workerList.workerState[args.WorkerId] == Fail {
+		reply.TaskType = NONE
+		reply.WorkerState = Fail
+		return nil
+	}
 	if c.mapAccessableSize > 0 {
 		reply.Nreduce = c.reduceSize
 		reply.TaskId = c.getAccessiableWorker(MAP)
@@ -200,9 +230,12 @@ func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 	defer c.state_lock.Unlock()
 	if c.state[args.TaskId] != Free {
 		c.state[args.TaskId] = Finish
+		reply.WorkerState = Finish
+	} else {
+		reply.WorkerState = Fail
 	}
 	// workerList.work_task_table[args.WorkerId] = workerList.work_task_table[args.WorkerId][1:]
-	reply.TaskType = NONE
+	//reply.TaskType = NONE
 	return nil
 }
 
@@ -227,10 +260,12 @@ func (c *Coordinator) Done() bool {
 	defer c.state_lock.Unlock()
 	for _, state := range c.state {
 		if state != Finish {
-			return false
+			is_done = false
+			return is_done
 		}
 	}
-	return true
+	is_done = true
+	return is_done
 }
 
 // create a Coordinator.

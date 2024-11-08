@@ -34,21 +34,6 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
-func heartbeat(heartbeatArgs *TaskArgs, heartbeatReply *TaskReply, file_name_list *[]string) {
-	ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
-	if !ok {
-		return
-	}
-	if heartbeatReply.WorkerState == Fail || heartbeatReply.WorkerState == Finish {
-		//
-		for _, filename := range *file_name_list {
-			// remove the file
-			os.Remove(filename)
-		}
-		os.Exit(1)
-	}
-}
-
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
@@ -58,27 +43,25 @@ func Worker(mapf func(string, string) []KeyValue,
 	heartbeatArgs.WorkerId = heartbeatReply.WorkerId
 	heartbeatReply = TaskReply{}
 	// Your worker implementation here.
-	// done := make(chan struct{})
-	// go func() {
-	// 	for {
-	// 		select {
-	// 		case <-done:
-	// 			return
-	// 		default:
-	// 			ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
-	// 			if !ok {
-	// 				return
-	// 			}
-	// 			time.Sleep(7 * time.Second)
-	// 		}
-	// 	}
-	// }()
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
+				if !ok {
+					return
+				}
+				time.Sleep(7 * time.Second)
+			}
+		}
+	}()
 
 	for {
 		args := TaskArgs{WorkerId: heartbeatArgs.WorkerId}
 		reply := TaskReply{}
-		file_name_list := []string{}
-		heartbeat(&heartbeatArgs, &heartbeatReply, &file_name_list)
 		ok := call("Coordinator.GetTask", &args, &reply)
 		if !ok {
 			break
@@ -86,20 +69,12 @@ func Worker(mapf func(string, string) []KeyValue,
 		switch reply.TaskType {
 		case MAP:
 			// go single_thread_map(mapf, &reply)
-			// Create a file_name_list pointer to store the file name
-
-			single_thread_map(mapf, &reply, &file_name_list)
-
+			single_thread_map(mapf, &reply)
 		case REDUCE:
 			// go single_thread_reduce(reducef, &reply)
-			file_name_list := []string{}
-			single_thread_reduce(reducef, &reply, &file_name_list)
+			single_thread_reduce(reducef, &reply)
 		case NONE:
 			// Continue call the coordinator to get the task in case of any worker is down
-			heartbeat(&heartbeatArgs, &heartbeatReply, &file_name_list)
-			if heartbeatReply.WorkerState == Fail || heartbeatReply.WorkerState == Finish {
-				break
-			}
 			continue
 			// break
 		}
@@ -128,7 +103,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 	return false
 }
 
-func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, file_name_list *[]string) {
+func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply) {
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
 		file, err := os.Open(filename)
@@ -146,18 +121,14 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 
 	for _, kv := range intermediate {
 		reduceTask := ihash(kv.Key) % reply.Nreduce
-		// Temporarily name
-		filename := fmt.Sprintf("mr-%d-%d-%d", reply.TaskId, reduceTask, reply.WorkerId)
-		_, err := os.Stat(filename)
-		fileAlreadyExists := !os.IsNotExist(err)
+		filename := fmt.Sprintf("mr-%d-%d", reply.TaskId, reduceTask)
 		file, err := os.OpenFile(filename, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
-			log.Fatalf("cannot open or create file %v: %v", filename, err)
+			file, err = os.Create(filename)
+			if err != nil {
+				log.Fatalf("cannot create %v", filename)
+			}
 		}
-		if !fileAlreadyExists {
-			*file_name_list = append(*file_name_list, filename)
-		}
-
 		enc := json.NewEncoder(file)
 		err = enc.Encode(&kv)
 		if err != nil {
@@ -168,24 +139,20 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 	args := TaskArgs{TaskId: reply.TaskId, TaskType: MAP, WorkerId: reply.WorkerId}
 	re := &TaskReply{}
 	for {
-		//fmt.Printf("Task%d Ok\n", reply.TaskId)
-		heartbeat(&args, re, file_name_list)
-		for _, filename := range *file_name_list {
-			// rename the file to mr
-			os.Rename(filename, filename[:len(filename)-2])
-		}
-		*file_name_list = []string{}
+		fmt.Printf("Task%d Ok\n", reply.TaskId)
 		ok := call("Coordinator.FinishTask", &args, re)
+		time.Sleep(100 * time.Millisecond)
 		if re.WorkerState == Fail {
-			os.Exit(1)
-		} else if ok && re.WorkerState == Finish {
+			return
+		}
+		if ok && re.WorkerState == Finish {
 			break
 		}
-
 	}
+
 }
 
-func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply, file_name_list *[]string) {
+func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply) {
 	inter_file_id := reply.TaskId - reply.Nreduce
 	inter_files, err := filepath.Glob(fmt.Sprintf("mr-*-%d", inter_file_id))
 	if err != nil {
@@ -195,7 +162,6 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	// 收集中间数据
 	intermediate := []KeyValue{}
 	for _, filename := range inter_files {
-		time.Sleep(100 * time.Millisecond)
 		file, err := os.Open(filename)
 		if err != nil {
 			log.Fatalf("cannot open %v", filename)
@@ -213,9 +179,9 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 
 	// 排序中间数据
 	sort.Sort(ByKey(intermediate))
-	oname := fmt.Sprintf("mr-out-%d-%d", inter_file_id, reply.WorkerId)
+	oname := fmt.Sprintf("mr-out-%d", inter_file_id)
 	ofile, _ := os.Create(oname)
-	*file_name_list = append(*file_name_list, oname)
+
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
@@ -237,19 +203,14 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	args := TaskArgs{TaskId: reply.TaskId, TaskType: REDUCE, WorkerId: reply.WorkerId}
 	re := &TaskReply{}
 	for {
-		//fmt.Printf("Task%d Ok\n", reply.TaskId)
-		heartbeat(&args, re, file_name_list)
-		for _, filename := range *file_name_list {
-			// rename the file to mr
-			os.Rename(filename, filename[:len(filename)-2])
-		}
-		*file_name_list = []string{}
+		fmt.Printf("Task%d Ok\n", reply.TaskId)
 		ok := call("Coordinator.FinishTask", &args, re)
+		time.Sleep(100 * time.Millisecond)
 		if re.WorkerState == Fail {
-			os.Exit(1)
-		} else if ok && re.WorkerState == Finish {
+			return
+		}
+		if ok && re.WorkerState == Finish {
 			break
 		}
-
 	}
 }
