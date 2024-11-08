@@ -58,6 +58,21 @@ func Worker(mapf func(string, string) []KeyValue,
 	heartbeatArgs.WorkerId = heartbeatReply.WorkerId
 	heartbeatReply = TaskReply{}
 	// Your worker implementation here.
+	done := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			default:
+				ok := call("Coordinator.HeartBeat", &heartbeatArgs, &heartbeatReply)
+				if !ok {
+					return
+				}
+				time.Sleep(10 * time.Second)
+			}
+		}
+	}()
 	// done := make(chan struct{})
 	// go func() {
 	// 	for {
@@ -176,9 +191,9 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 		}
 		*file_name_list = []string{}
 		ok := call("Coordinator.FinishTask", &args, re)
-		if re.WorkerState == Fail {
-			os.Exit(1)
-		} else if ok && re.WorkerState == Finish {
+		time.Sleep(3 * time.Second)
+		if ok && re.TaskType == NONE {
+
 			break
 		}
 
@@ -245,9 +260,8 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 		}
 		*file_name_list = []string{}
 		ok := call("Coordinator.FinishTask", &args, re)
-		if re.WorkerState == Fail {
-			os.Exit(1)
-		} else if ok && re.WorkerState == Finish {
+		time.Sleep(2 * time.Second)
+		if ok && re.TaskType == NONE {
 			break
 		}
 
