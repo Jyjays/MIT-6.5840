@@ -1,6 +1,7 @@
 package mr
 
 import (
+	"fmt"
 	"log"
 	"net"
 	"net/http"
@@ -267,6 +268,8 @@ func (c *Coordinator) Done() bool {
 			return is_done
 		}
 	}
+	fmt.Printf("All tasks are finished\n")
+
 	is_done = true
 	return is_done
 }
