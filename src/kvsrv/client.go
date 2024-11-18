@@ -1,16 +1,19 @@
 package kvsrv
 
 import (
+	"time"
 	"crypto/rand"
 	"math/big"
-
 	"6.5840/labrpc"
 )
 
+// Clerk represents a client that interacts with the key-value server.
 type Clerk struct {
 	server *labrpc.ClientEnd
 	// You will have to modify this struct.
-
+	state   map[int]bool
+	cur_id  int64
+	//lock   sync.Mutex
 }
 
 func nrand() int64 {
@@ -23,6 +26,7 @@ func nrand() int64 {
 func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.server = server
+	ck.cur_id = nrand()
 	// You'll have to add code here.
 	return ck
 }
@@ -40,12 +44,14 @@ func MakeClerk(server *labrpc.ClientEnd) *Clerk {
 func (ck *Clerk) Get(key string) string {
 	args := GetArgs{Key: key}
 	reply := GetReply{}
-	ok := ck.server.Call("KVServer.Get", &args, &reply)
-	if ok {
-		return reply.Value
+	for {
+		ok := ck.server.Call("KVServer.Get", &args, &reply)
+		if ok {
+			break
+		}
+	
 	}
-	// You will have to modify this function.
-	return ""
+	return reply.Value
 }
 
 // shared by Put and Append.
@@ -58,13 +64,18 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) string {
 	// You will have to modify this function.
-	args := PutAppendArgs{Key: key, Value: value}
+	
+	args := PutAppendArgs{Key: key, Value: value,Id: ck.cur_id}
 	reply := PutAppendReply{}
-	ok := ck.server.Call("KVServer."+op, &args, &reply)
-	if ok {
-		return reply.Value
+	for{
+		ok := ck.server.Call("KVServer."+op, &args, &reply)
+		if ok {
+			ck.cur_id++
+			return reply.Value
+		}else {
+			time.Sleep(100 * time.Millisecond)
+		}
 	}
-	return ""
 }
 
 func (ck *Clerk) Put(key string, value string) {
