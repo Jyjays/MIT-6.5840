@@ -41,9 +41,9 @@ import (
 
 type State int
 const (
-	Leader State = iota
-	Follower
+	Follower State = iota
 	Candidate
+	Leader
 )
 
 type ApplyMsg struct {
