@@ -38,6 +38,14 @@ import (
 // in part 3D you'll want to send other kinds of messages (e.g.,
 // snapshots) on the applyCh, but set CommandValid to false for these
 // other uses.
+
+type State int
+const (
+	Leader State = iota
+	Follower
+	Candidate
+)
+
 type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
@@ -48,6 +56,10 @@ type ApplyMsg struct {
 	Snapshot      []byte
 	SnapshotTerm  int
 	SnapshotIndex int
+}
+
+type LogEntry struct {
+	log string
 }
 
 // A Go object implementing a single Raft peer.
@@ -61,7 +73,17 @@ type Raft struct {
 	// Your data here (3A, 3B, 3C).
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
+	currentTerm int
+	voteFor int
+	log 	[]*LogEntry
 
+	commitIndex int
+	lastApplied int
+
+	nextIndex []int
+	matchIndex []int
+
+	state State
 }
 
 // return currentTerm and whether this server
@@ -71,6 +93,13 @@ func (rf *Raft) GetState() (int, bool) {
 	var term int
 	var isleader bool
 	// Your code here (3A).
+	term = rf.currentTerm
+	if rf.state == Leader {
+		isleader = true
+	} else {
+		isleader = false
+	}
+
 	return term, isleader
 }
 
@@ -128,17 +157,67 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // field names must start with capital letters!
 type RequestVoteArgs struct {
 	// Your data here (3A, 3B).
+	term int
+	candidateId int
+	lastLogIndex int
+	lastLogTerm int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
+	term int 
+	voteGranted bool
 }
+
+type AppendEntriesArgs struct{
+	term int 
+	leaderId int 
+	prevLogIndex int
+	prevLogTerm int 
+	entries  []LogEntry
+	leaderCommit int
+}
+
+type AppendEntriesReply struct{
+	term int 
+	success bool
+}
+
+
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
+	reply.term = rf.currentTerm
+	if args.term < rf.currentTerm || (rf.voteFor >=0 && rf.voteFor != args.candidateId)  {
+		reply.voteGranted = false 
+		return 
+	}
+	rf.voteFor = args.candidateId
+	reply.voteGranted = true
+}
+
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply){
+	reply.term = rf.currentTerm
+	if args.term < rf.currentTerm {
+		reply.success = false
+		return 
+	}
+	if args.prevLogTerm == rf.currentTerm && rf.log[args.prevLogIndex] == nil {
+		reply.success = false
+		return
+	}
+	// if args.leaderCommit > rf.commitIndex {
+	// 	if args.leaderCommit < rf.lastApplied {
+
+	// 	}
+	// }
+	if len(args.entries) == 0 {
+		reply.success = true
+		return
+	}
 }
 
 // example code to send a RequestVote RPC to a server.
@@ -170,6 +249,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // the struct itself.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
+	return ok
+}
+
+func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs,reply *AppendEntriesReply) bool {
+	ok := rf.peers[server].Call("Raft.AppendEntries",args,reply)
 	return ok
 }
 
@@ -247,6 +331,9 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (3A, 3B, 3C).
+	rf.currentTerm = 0
+	rf.voteFor = -1
+	rf.lastApplied = 0
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
