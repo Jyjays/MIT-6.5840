@@ -23,7 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
+	"fmt"
 	//	"6.5840/labgob"
 	"6.5840/labrpc"
 )
@@ -76,7 +76,8 @@ type Raft struct {
 	currentTerm int
 	voteFor int
 	log 	[]*LogEntry
-
+	// heartbeat: decide whether to start the election
+	heartbeat   bool
 	commitIndex int
 	lastApplied int
 
@@ -207,6 +208,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 	if args.prevLogTerm == rf.currentTerm && rf.log[args.prevLogIndex] == nil {
 		reply.success = false
+		rf.heartbeat = true
 		return
 	}
 	// if args.leaderCommit > rf.commitIndex {
@@ -305,7 +307,12 @@ func (rf *Raft) ticker() {
 
 		// Your code here (3A)
 		// Check if a leader election should be started.
-
+		if rf.heartbeat == true {
+			rf.heartbeat = false
+		} else {
+			fmt.Printf("Start election\n")
+			//rf.sendRequestVote()
+		}
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
