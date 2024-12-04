@@ -60,7 +60,7 @@ type ApplyMsg struct {
 }
 
 type LogEntry struct {
-	log string
+	Log string
 }
 
 // A Go object implementing a single Raft peer.
@@ -209,11 +209,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		reply.Success = false
 		return
 	}
-	if args.PrevLogTerm == rf.currentTerm && rf.Log[args.PrevLogIndex] == nil {
-		reply.Success = false
-		rf.heartbeat = true
-		return
-	}
+	// if args.PrevLogTerm == rf.currentTerm && rf.Log[args.PrevLogIndex] == nil {
+	// 	reply.Success = false
+	// 	rf.heartbeat = true
+	// 	return
+	// }
 	// if args.LeaderCommit > rf.commitIndex {
 	// 	if args.LeaderCommit < rf.lastApplied {
 
@@ -340,9 +340,7 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.me = me
 
 	// Your initialization code here (3A, 3B, 3C).
-	rf.currentTerm = 0
-	rf.voteFor = -1
-	rf.lastApplied = 0
+	rf.Init()
 
 	// initialize from state persisted before a crash
 	rf.readPersist(persister.ReadRaftState())
@@ -354,10 +352,22 @@ func Make(peers []*labrpc.ClientEnd, me int,
 }
 
 // ------------------utils-------------------
+
+// Init function
+func (rf *Raft) Init() {
+	rf.currentTerm = 0
+	rf.voteFor = -1
+	rf.Log = append(rf.Log, &LogEntry{})
+	rf.commitIndex = 0
+	rf.lastApplied = 0
+	rf.state = Follower
+}
+
 // Leader send heartbeat functon
 func (rf *Raft) SendHeartbeat() {
+	fmt.Printf("Leader send heartbeat:%d\n", rf.me)
 	for i := range rf.peers {
-		aargs := AppendEntriesArgs{}
+		aargs := MakeAppendEntriesArgs(rf.currentTerm, rf.me, len(rf.Log)-1, rf.currentTerm, nil, rf.commitIndex)
 		aargs.Term = rf.currentTerm
 		areply := AppendEntriesReply{}
 		rf.sendAppendEntries(i, &aargs, &areply)
