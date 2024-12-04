@@ -308,6 +308,15 @@ func (rf *Raft) StartElection() {
 	}
 }
 
+func (rf *Raft) SendHeartbeat(){
+	for i:= range rf.peers{
+		aargs := AppendEntriesArgs{}
+		aargs.term = rf.currentTerm
+
+		rf.sendAppendEntries(i,&aargs,&AppendEntriesReply{})
+	}
+}
+
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to
 // check whether Kill() has been called. the use of atomic avoids the
