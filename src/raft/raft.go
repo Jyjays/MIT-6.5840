@@ -29,7 +29,7 @@ import (
 	"6.5840/labrpc"
 )
 
-// as each Raft peer becomes aware that successive log entries are
+// as each Raft peer becomes aware that successive log Entries are
 // committed, the peer should send an ApplyMsg to the service (or
 // tester) on the same server, via the applyCh passed to Make(). set
 // CommandValid to true to indicate that the ApplyMsg contains a newly
@@ -76,7 +76,7 @@ type Raft struct {
 	// state a Raft server must maintain.
 	currentTerm int
 	voteFor     int
-	log         []*LogEntry
+	Log         []*LogEntry
 	// heartbeat: decide whether to start the election
 	heartbeat   bool
 	commitIndex int
@@ -156,65 +156,65 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 // field names must start with capital letters!
 type RequestVoteArgs struct {
 	// Your data here (3A, 3B).
-	term         int
-	candidateId  int
-	lastLogIndex int
-	lastLogTerm  int
+	Term         int
+	CandidateId  int
+	LastLogIndex int
+	LastLogTerm  int
 }
 
 // example RequestVote RPC reply structure.
 // field names must start with capital letters!
 type RequestVoteReply struct {
 	// Your data here (3A).
-	term        int
-	voteGranted bool
+	Term        int
+	VoteGranted bool
 }
 
 type AppendEntriesArgs struct {
-	term         int
-	leaderId     int
-	prevLogIndex int
-	prevLogTerm  int
-	entries      []LogEntry
-	leaderCommit int
+	Term         int
+	LeaderId     int
+	PrevLogIndex int
+	PrevLogTerm  int
+	Entries      []LogEntry
+	LeaderCommit int
 }
 
 type AppendEntriesReply struct {
-	term    int
-	success bool
+	Term    int
+	Success bool
 }
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	// Your code here (3A, 3B).
-	reply.term = rf.currentTerm
-	if args.term < rf.currentTerm || rf.state != Follower || (rf.voteFor >= 0 && rf.voteFor != args.candidateId) {
-		reply.voteGranted = false
+	reply.Term = rf.currentTerm
+	if args.Term < rf.currentTerm || rf.state != Follower || (rf.voteFor >= 0 && rf.voteFor != args.CandidateId) {
+		reply.VoteGranted = false
 		return
 	}
 
-	rf.voteFor = args.candidateId
-	reply.voteGranted = true
+	rf.voteFor = args.CandidateId
+	reply.VoteGranted = true
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	reply.term = rf.currentTerm
-	if args.term < rf.currentTerm {
-		reply.success = false
+	reply.Term = rf.currentTerm
+	if args.Term < rf.currentTerm {
+		reply.Success = false
 		return
 	}
-	if args.prevLogTerm == rf.currentTerm && rf.log[args.prevLogIndex] == nil {
-		reply.success = false
+	if args.PrevLogTerm == rf.currentTerm && rf.Log[args.PrevLogIndex] == nil {
+		reply.Success = false
 		rf.heartbeat = true
 		return
 	}
-	// if args.leaderCommit > rf.commitIndex {
-	// 	if args.leaderCommit < rf.lastApplied {
+	// if args.LeaderCommit > rf.commitIndex {
+	// 	if args.LeaderCommit < rf.lastApplied {
 
 	// 	}
 	// }
-	if len(args.entries) == 0 {
-		reply.success = true
+	if len(args.Entries) == 0 {
+		reply.Success = true
 		return
 	}
 }
@@ -276,45 +276,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	// Your code here (3B).
 
 	return index, term, isLeader
-}
-
-func (rf *Raft) StartElection() {
-	rf.state = Candidate
-	rf.currentTerm += rf.currentTerm
-	rf.voteFor = rf.me
-	fmt.Printf("Start election\n")
-	rargs := RequestVoteArgs{rf.currentTerm, rf.me, 0, 0}
-	rrpley := RequestVoteReply{}
-	votesize := 0
-	standrad := len(rf.peers) / 2
-	//rf.sendRequestVote()
-
-	//TODO : Timeout detection
-	for i := range rf.peers {
-		rf.sendRequestVote(i, &rargs, &rrpley)
-		if rrpley.term > rf.currentTerm {
-			rf.currentTerm = rrpley.term
-			rf.state = Follower
-			break
-		}
-		if rrpley.voteGranted == true {
-			votesize += 1
-			if votesize > standrad {
-				rf.state = Leader
-				//TODO: Leader start work
-			}
-			//TODO: If receive heartbeat from other leader ,become its follower
-		}
-	}
-}
-
-func (rf *Raft) SendHeartbeat(){
-	for i:= range rf.peers{
-		aargs := AppendEntriesArgs{}
-		aargs.term = rf.currentTerm
-
-		rf.sendAppendEntries(i,&aargs,&AppendEntriesReply{})
-	}
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -384,4 +345,83 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	go rf.ticker()
 
 	return rf
+}
+
+// ------------------utils-------------------
+// Leader send heartbeat functon
+func (rf *Raft) SendHeartbeat() {
+	for i := range rf.peers {
+		aargs := AppendEntriesArgs{}
+		aargs.Term = rf.currentTerm
+		areply := AppendEntriesReply{}
+		rf.sendAppendEntries(i, &aargs, &areply)
+		if !areply.Success {
+			break
+		}
+	}
+}
+
+func (rf *Raft) StartElection() {
+	rf.state = Candidate
+	rf.currentTerm += rf.currentTerm
+	rf.voteFor = rf.me
+	fmt.Printf("Start election\n")
+	rargs := RequestVoteArgs{rf.currentTerm, rf.me, 0, 0}
+	rrpley := RequestVoteReply{}
+	votesize := 0
+	standrad := len(rf.peers) / 2
+	//rf.sendRequestVote()
+
+	//TODO : Timeout detection
+	for i := range rf.peers {
+		rf.sendRequestVote(i, &rargs, &rrpley)
+		if rrpley.Term > rf.currentTerm {
+			rf.currentTerm = rrpley.Term
+			rf.state = Follower
+			break
+		}
+		if rrpley.VoteGranted == true {
+			votesize += 1
+			if votesize > standrad {
+				rf.state = Leader
+				//TODO: Leader start work
+				go rf.SendHeartbeat()
+				break
+			}
+			//TODO: If receive heartbeat from other leader ,become its follower
+		}
+	}
+
+}
+
+// Make function for RequestVote and AppendEntries
+func MakeRequestVoteArgs(term int, candidateId int, lastLogIndex int, lastLogTerm int) RequestVoteArgs {
+	args := RequestVoteArgs{}
+	args.Term = term
+	args.CandidateId = candidateId
+	args.LastLogIndex = lastLogIndex
+	args.LastLogTerm = lastLogTerm
+	return args
+}
+func MakeRequestVoteReply(term int, voteGranted bool) RequestVoteReply {
+	reply := RequestVoteReply{}
+	reply.Term = term
+	reply.VoteGranted = voteGranted
+	return reply
+}
+func MakeAppendEntriesArgs(term int, leaderId int, prevLogIndex int, prevLogTerm int, entries []LogEntry, leaderCommit int) AppendEntriesArgs {
+	args := AppendEntriesArgs{}
+	args.Term = term
+	args.LeaderId = leaderId
+	args.PrevLogIndex = prevLogIndex
+	args.PrevLogTerm = prevLogTerm
+	args.Entries = entries
+	args.LeaderCommit = leaderCommit
+	return args
+}
+func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
+	reply := AppendEntriesReply{}
+	reply.Term = term
+	reply.Success = success
+	return reply
 }
