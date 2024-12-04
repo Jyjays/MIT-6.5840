@@ -186,6 +186,9 @@ type AppendEntriesReply struct {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	// Your code here (3A, 3B).
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm || rf.state != Follower || (rf.voteFor >= 0 && rf.voteFor != args.CandidateId) {
@@ -198,6 +201,9 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Success = false
@@ -362,33 +368,40 @@ func (rf *Raft) SendHeartbeat() {
 }
 
 func (rf *Raft) StartElection() {
+	rf.mu.Lock()
 	rf.state = Candidate
-	rf.currentTerm += rf.currentTerm
+	rf.currentTerm += 1
 	rf.voteFor = rf.me
-	fmt.Printf("Start election\n")
-	rargs := RequestVoteArgs{rf.currentTerm, rf.me, 0, 0}
+	fmt.Printf("Start election:%d\n", rf.me)
+	rargs := MakeRequestVoteArgs(rf.currentTerm, rf.me, len(rf.Log), rf.currentTerm)
 	rrpley := RequestVoteReply{}
 	votesize := 0
-	standrad := len(rf.peers) / 2
+	//standrad := len(rf.peers) / 2
+	standrad := 1
 	//rf.sendRequestVote()
-
+	rf.mu.Unlock()
 	//TODO : Timeout detection
 	for i := range rf.peers {
 		rf.sendRequestVote(i, &rargs, &rrpley)
 		if rrpley.Term > rf.currentTerm {
+			rf.mu.Lock()
 			rf.currentTerm = rrpley.Term
 			rf.state = Follower
+			rf.mu.Unlock()
 			break
 		}
 		if rrpley.VoteGranted == true {
 			votesize += 1
 			if votesize > standrad {
+				rf.mu.Lock()
 				rf.state = Leader
 				//TODO: Leader start work
 				go rf.SendHeartbeat()
+				rf.mu.Unlock()
 				break
 			}
 			//TODO: If receive heartbeat from other leader ,become its follower
+
 		}
 	}
 
