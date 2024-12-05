@@ -14,12 +14,23 @@ import "time"
 import "math/rand"
 import "sync/atomic"
 import "sync"
+import "os"
+import "log"
 
 // The tester generously allows solutions to complete elections in one second
 // (much more than the paper's range of timeouts).
 const RaftElectionTimeout = 1000 * time.Millisecond
 
 func TestInitialElection3A(t *testing.T) {
+	//SECTION - enable log file
+	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+	// 设置日志输出到文件
+	log.SetOutput(logFile)
+	//!SECTION
 	servers := 3
 	cfg := make_config(t, servers, false, false)
 	defer cfg.cleanup()

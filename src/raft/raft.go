@@ -183,7 +183,7 @@ type AppendEntriesReply struct {
 	Term    int
 	Success bool
 }
-
+//TODO - Reimplement with GetState function
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	//SECTION - RequestVote
@@ -321,6 +321,7 @@ func (rf *Raft) ticker() {
 	defer logFile.Close()
 	// 设置日志输出到文件
 	log.SetOutput(logFile)
+	log.Printf("-----------A new lab start--------------\n" )
 	//!SECTION
 	//FIXME - Error: if start election is called before the ticker, then the ticker will not work
 	// this means every raft will start election at the same time
@@ -359,7 +360,7 @@ func (rf *Raft) ticker() {
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
 	
-
+	
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
@@ -414,8 +415,7 @@ func (rf *Raft) StartElection() {
 	votesize := 1
 	//REVIEW - standrad should be len(rf.peers) / 2
 	//standrad := len(rf.peers) / 2
-	standrad := 1
-	//rf.sendRequestVote()
+	standrad := getStandrad(len(rf.peers))
 	rf.mu.Unlock()
 	//TODO : Timeout detection
 	for i := range rf.peers {
@@ -436,13 +436,11 @@ func (rf *Raft) StartElection() {
 				rf.mu.Lock()
 				log.Printf("Leader anncounced %d\n", rf.me)
 				rf.state = Leader
-				//TODO: Leader start work
+
 				go rf.SendHeartbeat()
 				rf.mu.Unlock()
 				break
 			}
-			//TODO: If receive heartbeat from other leader ,become its follower
-			// check whether its state changed to leader
 		}
 	}
 
@@ -478,4 +476,12 @@ func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
 	reply.Term = term
 	reply.Success = success
 	return reply
+}
+
+func getStandrad(peers int) int {
+	if peers%2 == 0 {
+		return peers / 2
+	} else {
+		return peers/2 + 1
+	}
 }
