@@ -19,12 +19,12 @@ package raft
 
 import (
 	//	"bytes"
-	"fmt"
+	"log"
 	"math/rand"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
-
 	//	"6.5840/labgob"
 	"6.5840/labrpc"
 )
@@ -186,40 +186,47 @@ type AppendEntriesReply struct {
 
 // example RequestVote RPC handler.
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	//SECTION - RequestVote
+	log.Printf("---------RequestVote-------------------\n")
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
-	// Your code here (3A, 3B).
+	//NOTE - debug in request vote
+	log.Printf("Candidate %d receive request vote from %d, and term is %d\n", rf.me, args.CandidateId,args.Term)
+	log.Printf("Candidate %d current term is %d\n", rf.me, rf.currentTerm)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm || rf.state != Follower || (rf.voteFor >= 0 && rf.voteFor != args.CandidateId) {
+		log.Printf("refused here,because term is %d, state is %d, voteFor is %d\n", rf.currentTerm,rf.state, rf.voteFor)
 		reply.VoteGranted = false
 		return
 	}
 
 	rf.voteFor = args.CandidateId
 	reply.VoteGranted = true
+	//!SECTION
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-
+	
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Success = false
 		return
 	}
-	// if args.PrevLogTerm == rf.currentTerm && rf.Log[args.PrevLogIndex] == nil {
-	// 	reply.Success = false
-	// 	rf.heartbeat = true
-	// 	return
-	// }
-	// if args.LeaderCommit > rf.commitIndex {
-	// 	if args.LeaderCommit < rf.lastApplied {
 
-	// 	}
-	// }
+	// If get heartbeat
 	if len(args.Entries) == 0 {
+		//NOTE - if this rf is candidate, but recive heartbeat from another leader 
+		// and its term is not smaller than this rf's term , then this rf should become follower
+		if rf.state == Candidate {
+			//NOTE - debug
+			log.Printf("Candidate %d become follower\n", rf.me)
+			rf.state = Follower
+			rf.voteFor = -1
+			rf.currentTerm = args.Term
+		}
+		rf.heartbeat = true
 		reply.Success = true
 		return
 	}
@@ -253,6 +260,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // that the caller passes the address of the reply struct with &, not
 // the struct itself.
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
+	//NOTE - debug
+	log.Printf("Candidate %d send request vote to %d\n", rf.me, server)
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
 }
@@ -304,23 +313,38 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
+	//SECTION - enable log file
+	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+	// 设置日志输出到文件
+	log.SetOutput(logFile)
+	//!SECTION
+	//FIXME - Error: if start election is called before the ticker, then the ticker will not work
+	// this means every raft will start election at the same time
 	for rf.killed() == false {
 
 		// Your code here (3A)
 		// Check if a leader election should be started.
-		if rf.heartbeat == true {
-			rf.heartbeat = false
-		} else {
-			// Start a new term
-			rf.StartElection()
-
-		}
-
+		
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
 		ms := 50 + (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
+
+		if rf.state != Follower {
+			continue
+		}else if rf.heartbeat{
+			rf.heartbeat = false
+		}else {
+			// Start a new term
+			rf.StartElection()
+		}
+
 	}
+	
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -334,6 +358,8 @@ func (rf *Raft) ticker() {
 // for any long-running work.
 func Make(peers []*labrpc.ClientEnd, me int,
 	persister *Persister, applyCh chan ApplyMsg) *Raft {
+	
+
 	rf := &Raft{}
 	rf.peers = peers
 	rf.persister = persister
@@ -365,7 +391,7 @@ func (rf *Raft) Init() {
 
 // Leader send heartbeat functon
 func (rf *Raft) SendHeartbeat() {
-	fmt.Printf("Leader send heartbeat:%d\n", rf.me)
+	log.Printf("Leader send heartbeat:%d\n", rf.me)
 	for i := range rf.peers {
 		aargs := MakeAppendEntriesArgs(rf.currentTerm, rf.me, len(rf.Log)-1, rf.currentTerm, nil, rf.commitIndex)
 		aargs.Term = rf.currentTerm
@@ -378,21 +404,25 @@ func (rf *Raft) SendHeartbeat() {
 }
 
 func (rf *Raft) StartElection() {
+	log.Printf("------------------------------\n")
 	rf.mu.Lock()
 	rf.state = Candidate
 	rf.currentTerm += 1
 	rf.voteFor = rf.me
-	fmt.Printf("Start election:%d\n", rf.me)
 	rargs := MakeRequestVoteArgs(rf.currentTerm, rf.me, len(rf.Log), rf.currentTerm)
 	rrpley := RequestVoteReply{}
-	votesize := 0
+	votesize := 1
+	//REVIEW - standrad should be len(rf.peers) / 2
 	//standrad := len(rf.peers) / 2
 	standrad := 1
 	//rf.sendRequestVote()
 	rf.mu.Unlock()
 	//TODO : Timeout detection
 	for i := range rf.peers {
+		//NOTE - debug
+		log.Printf("Candidate %d send request vote to %d\n", rf.me, i)
 		rf.sendRequestVote(i, &rargs, &rrpley)
+		log.Printf("reply: %v\n", rrpley)
 		if rrpley.Term > rf.currentTerm {
 			rf.mu.Lock()
 			rf.currentTerm = rrpley.Term
@@ -404,6 +434,7 @@ func (rf *Raft) StartElection() {
 			votesize += 1
 			if votesize > standrad {
 				rf.mu.Lock()
+				log.Printf("Leader anncounced %d\n", rf.me)
 				rf.state = Leader
 				//TODO: Leader start work
 				go rf.SendHeartbeat()
@@ -411,7 +442,7 @@ func (rf *Raft) StartElection() {
 				break
 			}
 			//TODO: If receive heartbeat from other leader ,become its follower
-
+			// check whether its state changed to leader
 		}
 	}
 

@@ -1,0 +1,233 @@
+2024/12/05 21:08:05 ------------------------------
+2024/12/05 21:08:05 Candidate 0 send request vote to 0
+2024/12/05 21:08:05 Candidate 0 send request vote to 0
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 0 receive request vote from 0, and term is 1
+2024/12/05 21:08:05 Candidate 0 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 1, voteFor is 0
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 Candidate 0 send request vote to 1
+2024/12/05 21:08:05 Candidate 0 send request vote to 1
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 1 receive request vote from 0, and term is 1
+2024/12/05 21:08:05 Candidate 1 current term is 0
+2024/12/05 21:08:05 reply: {1 true}
+2024/12/05 21:08:05 Leader anncounced 0
+2024/12/05 21:08:05 Leader send heartbeat:0
+2024/12/05 21:08:05 ------------------------------
+2024/12/05 21:08:05 Candidate 2 send request vote to 0
+2024/12/05 21:08:05 Candidate 2 send request vote to 0
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 0 receive request vote from 2, and term is 1
+2024/12/05 21:08:05 Candidate 0 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 2, voteFor is 0
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 Candidate 2 send request vote to 1
+2024/12/05 21:08:05 Candidate 2 send request vote to 1
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 1 receive request vote from 2, and term is 1
+2024/12/05 21:08:05 Candidate 1 current term is 0
+2024/12/05 21:08:05 refused here,because term is 0, state is 0, voteFor is 0
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 Candidate 2 send request vote to 2
+2024/12/05 21:08:05 Candidate 2 send request vote to 2
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 2 receive request vote from 2, and term is 1
+2024/12/05 21:08:05 Candidate 2 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 1, voteFor is 2
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 ------------------------------
+2024/12/05 21:08:05 Candidate 1 send request vote to 0
+2024/12/05 21:08:05 Candidate 1 send request vote to 0
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 0 receive request vote from 1, and term is 1
+2024/12/05 21:08:05 Candidate 0 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 2, voteFor is 0
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 Candidate 1 send request vote to 1
+2024/12/05 21:08:05 Candidate 1 send request vote to 1
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 1 receive request vote from 1, and term is 1
+2024/12/05 21:08:05 Candidate 1 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 1, voteFor is 1
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:05 Candidate 1 send request vote to 2
+2024/12/05 21:08:05 Candidate 1 send request vote to 2
+2024/12/05 21:08:05 ---------RequestVote-------------------
+2024/12/05 21:08:05 Candidate 2 receive request vote from 1, and term is 1
+2024/12/05 21:08:05 Candidate 2 current term is 1
+2024/12/05 21:08:05 refused here,because term is 1, state is 1, voteFor is 2
+2024/12/05 21:08:05 reply: {1 false}
+2024/12/05 21:08:08 ------------------------------
+2024/12/05 21:08:08 Candidate 1 send request vote to 0
+2024/12/05 21:08:08 Candidate 1 send request vote to 0
+2024/12/05 21:08:08 ---------RequestVote-------------------
+2024/12/05 21:08:08 Candidate 0 receive request vote from 1, and term is 1
+2024/12/05 21:08:08 Candidate 0 current term is 0
+2024/12/05 21:08:08 reply: {0 true}
+2024/12/05 21:08:08 Leader anncounced 1
+2024/12/05 21:08:08 Leader send heartbeat:1
+2024/12/05 21:08:08 ------------------------------
+2024/12/05 21:08:08 Candidate 0 send request vote to 0
+2024/12/05 21:08:08 Candidate 0 send request vote to 0
+2024/12/05 21:08:08 ---------RequestVote-------------------
+2024/12/05 21:08:08 Candidate 0 receive request vote from 0, and term is 1
+2024/12/05 21:08:08 Candidate 0 current term is 1
+2024/12/05 21:08:08 refused here,because term is 1, state is 1, voteFor is 0
+2024/12/05 21:08:08 reply: {1 false}
+2024/12/05 21:08:08 Candidate 0 send request vote to 1
+2024/12/05 21:08:08 Candidate 0 send request vote to 1
+2024/12/05 21:08:08 ---------RequestVote-------------------
+2024/12/05 21:08:08 Candidate 1 receive request vote from 0, and term is 1
+2024/12/05 21:08:08 Candidate 1 current term is 1
+2024/12/05 21:08:08 refused here,because term is 1, state is 2, voteFor is 1
+2024/12/05 21:08:08 reply: {1 false}
+2024/12/05 21:08:08 Candidate 0 send request vote to 2
+2024/12/05 21:08:08 Candidate 0 send request vote to 2
+2024/12/05 21:08:08 ---------RequestVote-------------------
+2024/12/05 21:08:08 Candidate 2 receive request vote from 0, and term is 1
+2024/12/05 21:08:08 Candidate 2 current term is 0
+2024/12/05 21:08:08 reply: {1 true}
+2024/12/05 21:08:08 Leader anncounced 0
+2024/12/05 21:08:08 Leader send heartbeat:0
+2024/12/05 21:08:09 ------------------------------
+2024/12/05 21:08:09 Candidate 0 send request vote to 0
+2024/12/05 21:08:09 Candidate 0 send request vote to 0
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 0 receive request vote from 0, and term is 1
+2024/12/05 21:08:09 Candidate 0 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 1, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 0 send request vote to 1
+2024/12/05 21:08:09 Candidate 0 send request vote to 1
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 1 receive request vote from 0, and term is 1
+2024/12/05 21:08:09 Candidate 1 current term is 0
+2024/12/05 21:08:09 reply: {1 true}
+2024/12/05 21:08:09 Leader anncounced 0
+2024/12/05 21:08:09 Leader send heartbeat:0
+2024/12/05 21:08:09 ------------------------------
+2024/12/05 21:08:09 Candidate 2 send request vote to 0
+2024/12/05 21:08:09 Candidate 2 send request vote to 0
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 0 receive request vote from 2, and term is 1
+2024/12/05 21:08:09 Candidate 0 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 2 send request vote to 1
+2024/12/05 21:08:09 Candidate 2 send request vote to 1
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 1 receive request vote from 2, and term is 1
+2024/12/05 21:08:09 Candidate 1 current term is 0
+2024/12/05 21:08:09 refused here,because term is 0, state is 0, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 2 send request vote to 2
+2024/12/05 21:08:09 Candidate 2 send request vote to 2
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 2 receive request vote from 2, and term is 1
+2024/12/05 21:08:09 Candidate 2 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 1, voteFor is 2
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 2 send request vote to 3
+2024/12/05 21:08:09 Candidate 2 send request vote to 3
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 3 receive request vote from 2, and term is 1
+2024/12/05 21:08:09 Candidate 3 current term is 0
+2024/12/05 21:08:09 reply: {1 true}
+2024/12/05 21:08:09 Leader anncounced 2
+2024/12/05 21:08:09 Leader send heartbeat:2
+2024/12/05 21:08:09 ------------------------------
+2024/12/05 21:08:09 Candidate 4 send request vote to 0
+2024/12/05 21:08:09 Candidate 4 send request vote to 0
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 0 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 0 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 4 send request vote to 1
+2024/12/05 21:08:09 Candidate 4 send request vote to 1
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 1 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 1 current term is 0
+2024/12/05 21:08:09 refused here,because term is 0, state is 0, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 4 send request vote to 2
+2024/12/05 21:08:09 Candidate 4 send request vote to 2
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 2 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 2 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 2
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 4 send request vote to 3
+2024/12/05 21:08:09 Candidate 4 send request vote to 3
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 3 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 3 current term is 0
+2024/12/05 21:08:09 refused here,because term is 0, state is 0, voteFor is 2
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 4 send request vote to 4
+2024/12/05 21:08:09 Candidate 4 send request vote to 4
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 4 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 4 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 1, voteFor is 4
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 4 send request vote to 5
+2024/12/05 21:08:09 Candidate 4 send request vote to 5
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 5 receive request vote from 4, and term is 1
+2024/12/05 21:08:09 Candidate 5 current term is 0
+2024/12/05 21:08:09 reply: {1 true}
+2024/12/05 21:08:09 Leader anncounced 4
+2024/12/05 21:08:09 Leader send heartbeat:4
+2024/12/05 21:08:09 ------------------------------
+2024/12/05 21:08:09 Candidate 5 send request vote to 0
+2024/12/05 21:08:09 Candidate 5 send request vote to 0
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 0 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 0 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 1
+2024/12/05 21:08:09 Candidate 5 send request vote to 1
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 1 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 1 current term is 0
+2024/12/05 21:08:09 refused here,because term is 0, state is 0, voteFor is 0
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 2
+2024/12/05 21:08:09 Candidate 5 send request vote to 2
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 2 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 2 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 2
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 3
+2024/12/05 21:08:09 Candidate 5 send request vote to 3
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 3 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 3 current term is 0
+2024/12/05 21:08:09 refused here,because term is 0, state is 0, voteFor is 2
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 4
+2024/12/05 21:08:09 Candidate 5 send request vote to 4
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 4 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 4 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 2, voteFor is 4
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 5
+2024/12/05 21:08:09 Candidate 5 send request vote to 5
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 5 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 5 current term is 1
+2024/12/05 21:08:09 refused here,because term is 1, state is 1, voteFor is 5
+2024/12/05 21:08:09 reply: {1 false}
+2024/12/05 21:08:09 Candidate 5 send request vote to 6
+2024/12/05 21:08:09 Candidate 5 send request vote to 6
+2024/12/05 21:08:09 ---------RequestVote-------------------
+2024/12/05 21:08:09 Candidate 6 receive request vote from 5, and term is 1
+2024/12/05 21:08:09 Candidate 6 current term is 0
+2024/12/05 21:08:09 reply: {1 true}
+2024/12/05 21:08:09 Leader anncounced 5
+2024/12/05 21:08:09 Leader send heartbeat:5
