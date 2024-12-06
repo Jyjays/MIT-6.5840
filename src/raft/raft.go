@@ -337,16 +337,15 @@ func (rf *Raft) ticker() {
 		//!SECTION
 		//REVIEW - start election
 		// Start a new term
-		// rf.mu.Lock()
-		// defer rf.mu.Unlock()
-		if rf.state == Follower && rf.checkElectionTimeout() {
-			//rf.mu.Unlock()
+		rf.mu.Lock()
+		flag := rf.state == Follower && rf.checkElectionTimeout()
+		rf.mu.Unlock()
+		if flag {
 			//NOTE - debug in ticker
 			DPrintf("Node %d: Start election for term %d\n", rf.me, rf.currentTerm+1)
 			go rf.StartElection()
 		}
 
-		//rf.mu.Unlock()
 	}
 
 }
@@ -487,6 +486,7 @@ func (rf *Raft) StartElection() {
 	}
 
 	// 等待投票完成或超时
+	//REVIEW - 为什么要用 goroutine
 	go func() {
 		voteTimeout := time.After(time.Millisecond * 150)
 		done := make(chan bool)
