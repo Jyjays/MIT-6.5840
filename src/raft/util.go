@@ -47,17 +47,17 @@ func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
 	reply.Success = success
 	return reply
 }
-
-func getStandrad(peers int) int {
-	if peers%2 == 0 {
-		return peers / 2
-	} else {
-		return peers/2 + 1
-	}
+func (rf *Raft) becomeFollower(term int, candidateID int) {
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
+	rf.state = Follower
+	rf.currentTerm = term
+	rf.voteFor = candidateID
+	rf.resetElectionTimer()
 }
 
 func (rf *Raft) resetElectionTimer() {
-	rf.electionTimeout = time.Now().Add(time.Duration(50+rand.Intn(300)) * time.Millisecond)
+	rf.electionTimeout = time.Now().Add(time.Duration(300+rand.Intn(1000)) * time.Millisecond)
 }
 
 func (rf *Raft) checkElectionTimeout() bool {

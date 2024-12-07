@@ -85,7 +85,8 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 
-	state           State
+	state State
+	//REVIEW - time.Time is not recommended by the student manual
 	electionTimeout time.Time
 }
 
@@ -190,7 +191,6 @@ type AppendEntriesReply struct {
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	// 设置回复的 Term，先返回自己的 Term
 	reply.Term = rf.currentTerm
 
 	if args.Term < rf.currentTerm {
@@ -219,20 +219,11 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.VoteGranted = true
 }
 
-func (rf *Raft) becomeFollower(term int, candidateID int) {
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
-	rf.state = Follower
-	rf.currentTerm = term
-	rf.voteFor = candidateID
-	rf.resetElectionTimer()
-}
-
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	//NOTE - debug in AppendEntries
-	DPrintf("Node %d: Recive AppendEntries for term %d\n", rf.me, args.Term)
+	//DPrintf("Node %d: Recive AppendEntries for term %d\n", rf.me, args.Term)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Success = false
@@ -247,7 +238,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		//NOTE - if this rf is candidate, but recive heartbeat from another leader
 		// and its term is not smaller than this rf's term , then this rf should become follower
 		rf.voteFor = -1
-		if rf.state == Candidate {
+		if rf.state != Follower {
 			//NOTE - follower 2
 			DPrintf("2. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
 			rf.becomeFollower(args.Term, -1)
@@ -259,6 +250,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 }
+
+//REVIEW - The return value is never used
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
@@ -330,7 +323,7 @@ func (rf *Raft) ticker() {
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
-		ms := 50 //+ (rand.Int63() % 300)
+		ms := 300 //+ (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 		//SECTION - debug in ticker
 		DPrintf("<<<<Node %d details: currentTerm: %d, voteFor: %d, state: %d>>>>\n", rf.me, rf.currentTerm, rf.voteFor, rf.state)
@@ -394,7 +387,7 @@ func (rf *Raft) Init() {
 func (rf *Raft) SendHeartbeats() {
 	// 启动心跳循环
 	go func() {
-		ticker := time.NewTicker(100 * time.Millisecond) // 心跳周期
+		ticker := time.NewTicker(200 * time.Millisecond) // 心跳周期
 		defer ticker.Stop()
 		for {
 			rf.mu.Lock()
@@ -418,6 +411,10 @@ func (rf *Raft) SendHeartbeats() {
 				go func(server int) {
 					args := MakeAppendEntriesArgs(currentTerm, rf.me, len(rf.Log)-1, 0, nil, leaderCommit)
 					reply := AppendEntriesReply{}
+					if rf.state != Leader {
+						return
+					}
+
 					DPrintf("Node %d: Send heartbeat to Node %d for term %d\n", rf.me, server, currentTerm)
 					if rf.sendAppendEntries(server, &args, &reply) {
 						rf.mu.Lock()
@@ -488,7 +485,7 @@ func (rf *Raft) StartElection() {
 	// 等待投票完成或超时
 	//REVIEW - 为什么要用 goroutine
 	go func() {
-		voteTimeout := time.After(time.Millisecond * 150)
+		voteTimeout := time.After(time.Millisecond * 250)
 		done := make(chan bool)
 
 		go func() {
@@ -512,6 +509,9 @@ func (rf *Raft) StartElection() {
 			if rf.state == Candidate && atomic.LoadInt32(&votes) <= int32(voteThreshold) {
 				//NOTE - follower 7
 				DPrintf("7. Node %d: Failed to become leader for term %d\n", rf.me, rf.currentTerm)
+				rf.becomeFollower(rf.currentTerm, -1)
+				rf.resetElectionTimer()
+
 				//rf.persist()
 			}
 			rf.mu.Unlock()
