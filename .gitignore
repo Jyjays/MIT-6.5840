@@ -5,3 +5,5 @@ api.key
 .vscode/
 *.log
 test/
+*.txt
+*.csv
