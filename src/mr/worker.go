@@ -112,7 +112,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, file_name_list *[]string) {
-	fmt.Printf("Map TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
+	//fmt.Printf("Map TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
 	delete_tmp_file(reply.TaskId, MAP)
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
@@ -175,7 +175,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply, file_name_list *[]string) {
-	fmt.Printf("Reduce TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
+	//fmt.Printf("Reduce TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
 	delete_tmp_file(reply.TaskId, REDUCE)
 	inter_file_id := reply.TaskId - reply.Nreduce
 	inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d", inter_file_id))

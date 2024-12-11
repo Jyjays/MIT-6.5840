@@ -15,7 +15,9 @@ var userRatingCounts map[string]int
 
 func init() {
 	userRatingCounts = make(map[string]int)
-	data, err := os.ReadFile("/home/jyjays/MIT6.5840/6.5840/src/main/merged_output.txt")
+
+	// merged_output.txt contains the user rating count data
+	data, err := os.ReadFile("/home/jyjays/MIT6.5840/6.5840/src/main/rd_res/user_rating_count.txt")
 	if err != nil {
 		panic(err)
 	}
@@ -146,7 +148,9 @@ func Reduce(key string, values []string) string {
 	if user1RatingCount == 0 || user2RatingCount == 0 {
 		return ""
 	}
-	similarity := float64(totalCommonCount) / (math.Sqrt(float64(user1RatingCount)) * math.Sqrt(float64(user2RatingCount)))
+	//NOTE - jaccard similarity
+	similarity := float64(totalCommonCount) /
+		(math.Sqrt(float64(user1RatingCount)) * math.Sqrt(float64(user2RatingCount)))
 
 	// Emit the result: user pair and their similarity
 	return fmt.Sprintf(",%.4f", similarity)
