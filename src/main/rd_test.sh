@@ -91,27 +91,6 @@ wait $pid
 python3 merge.py -n movie_recommend.txt
 
 
-# start eval1 job
-
-echo '***' eval1
-
- /home/jyjays/MIT6.5840/6.5840/src/main/mrcoordinator /home/jyjays/MIT6.5840/6.5840/src/main/input_files/testSet_*txt &
-pid=$!
-
-# give the coordinator time to create the sockets.
-sleep 1
-
-# start multiple workers.
-( /home/jyjays/MIT6.5840/6.5840/src/main/mrworker /home/jyjays/MIT6.5840/6.5840/src/mrapps/eval1.so) &
-( /home/jyjays/MIT6.5840/6.5840/src/main/mrworker /home/jyjays/MIT6.5840/6.5840/src/mrapps/eval1.so) &
-( /home/jyjays/MIT6.5840/6.5840/src/main/mrworker /home/jyjays/MIT6.5840/6.5840/src/mrapps/eval1.so) &
-
-
-# wait for the coordinator to exit.
-wait $pid
-
-python3 merge.py -n eval_result.txt
-
 
 # cleanup
 rm -rf mr-out-*
