@@ -63,6 +63,13 @@ type LogEntry struct {
 	Log string
 }
 
+// NOTE - 预定义区
+// Time define
+const (
+	HeartbeatInterval = 200 * time.Millisecond
+	ElectionTimeout   = 300 * time.Millisecond
+)
+
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.Mutex          // Lock to protect shared access to this peer's state
@@ -251,7 +258,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 }
 
-//REVIEW - The return value is never used
+// REVIEW - The return value is never used
 func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
 	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
 	return ok
@@ -387,7 +394,7 @@ func (rf *Raft) Init() {
 func (rf *Raft) SendHeartbeats() {
 	// 启动心跳循环
 	go func() {
-		ticker := time.NewTicker(200 * time.Millisecond) // 心跳周期
+		ticker := time.NewTicker(HeartbeatInterval) // 心跳周期
 		defer ticker.Stop()
 		for {
 			rf.mu.Lock()
@@ -443,6 +450,7 @@ func (rf *Raft) StartElection() {
 	rargs := MakeRequestVoteArgs(currentTerm, rf.me, len(rf.Log), currentTerm)
 	rf.mu.Unlock()
 
+	//REVIEW - wg的作用（gpt写的-_-）
 	var votes int32 = 1
 	var wg sync.WaitGroup
 	voteThreshold := len(rf.peers) / 2 // 过半数阈值

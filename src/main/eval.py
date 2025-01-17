@@ -40,7 +40,7 @@ print(f"Total number of movies in test set: {total_movies}")
 
 
 # 初始化指标累积值
-N = 10
+N = 20
 # 准确率和召回率
 hit = 0
 rec_count = 0

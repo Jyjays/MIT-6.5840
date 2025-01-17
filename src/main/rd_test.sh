@@ -49,6 +49,7 @@ sleep 1
 # wait for the coordinator to exit.
 wait $pid
 
+cd /home/jyjays/MIT6.5840/6.5840/src/main
 python3 merge.py -n daopai.txt -s daopai
 
 # start usercf job

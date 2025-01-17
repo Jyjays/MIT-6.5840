@@ -122,37 +122,36 @@ func Map(filename string, content string) []mr.KeyValue {
 	}
 	return kva
 }
-
 func Reduce(key string, values []string) string {
 	// Key: "user1,user2"
-	// Values: ["common_count1", "common_count2", ...]
+	// Values: ["item1_popularity", "item2_popularity", ...]
 
 	// Split key into user1 and user2
 	users := strings.Split(key, ",")
 	user1 := users[0]
 	user2 := users[1]
 
-	// Accumulate the total common rating count
-	totalCommonCount := 0
+	// Accumulate the similarity based on the adjusted formula
+	similarity := 0.0
 	for _, val := range values {
-		count, err := strconv.Atoi(val)
+		popularity, err := strconv.Atoi(val) // Parse the popularity (|N(i)|) of the item
 		if err != nil {
 			continue // Skip invalid entries
 		}
-		totalCommonCount += count
+		// Add the contribution of this item to similarity using the adjustment factor
+		similarity += 1.0 / math.Log(1.0+float64(popularity))
 	}
+
 	// Simulate fetching user rating counts
 	user1RatingCount := getUserRatingCount(user1) // Fetch the number of ratings user1 has given
 	user2RatingCount := getUserRatingCount(user2) // Fetch the number of ratings user2 has given
-	// Compute the similarity using cosine similarity
+
+	// Compute the final similarity by normalizing with the denominator
 	if user1RatingCount == 0 || user2RatingCount == 0 {
 		return ""
 	}
-	//NOTE - jaccard similarity
-	similarity := float64(totalCommonCount) /
-		(math.Sqrt(float64(user1RatingCount)) * math.Sqrt(float64(user2RatingCount)))
+	similarity /= math.Sqrt(float64(user1RatingCount) * float64(user2RatingCount))
 
 	// Emit the result: user pair and their similarity
 	return fmt.Sprintf(",%.4f", similarity)
-
 }
