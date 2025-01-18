@@ -60,7 +60,9 @@ type ApplyMsg struct {
 }
 
 type LogEntry struct {
-	Log string
+	Command interface{}
+	Index   int
+	Term    int
 }
 
 // NOTE - 预定义区
@@ -238,24 +240,47 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	}
 
 	//
+	//NOTE - AppendEntries 3A
 	//FIXME - If this rf server is follower, and recive the heartbeat
 	//1. if the rf's voteFor is not -1, then it should be reset to -1
 
-	if len(args.Entries) == 0 {
-		//NOTE - if this rf is candidate, but recive heartbeat from another leader
-		// and its term is not smaller than this rf's term , then this rf should become follower
+	//NOTE - if this rf is candidate, but recive heartbeat from another leader
+	// and its term is not smaller than this rf's term , then this rf should become follower
+	if rf.voteFor != -1 {
 		rf.voteFor = -1
-		if rf.state != Follower {
-			//NOTE - follower 2
-			DPrintf("2. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
-			rf.becomeFollower(args.Term, -1)
-		} else {
-			rf.resetElectionTimer()
-		}
-		//rf.heartbeat = true
-		reply.Success = true
-		return
 	}
+	if rf.state != Follower {
+		//NOTE - follower 2
+		DPrintf("2. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
+		rf.becomeFollower(args.Term, -1)
+	} else {
+		rf.resetElectionTimer()
+	}
+	//NOTE - AppendEntries 3B
+	for i := 0; i < len(args.Entries); i++ {
+		//TODO - judge weither there is a conflict between local logs and new entries。
+		rf.Log = append(rf.Log, &args.Entries[i])
+
+	}
+	//rf.heartbeat = true
+	reply.Success = true
+	return
+	// if len(args.Entries) == 0 {
+	// 	//NOTE - if this rf is candidate, but recive heartbeat from another leader
+	// 	// and its term is not smaller than this rf's term , then this rf should become follower
+	// 	rf.voteFor = -1
+	// 	if rf.state != Follower {
+	// 		//NOTE - follower 2
+	// 		DPrintf("2. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
+	// 		rf.becomeFollower(args.Term, -1)
+	// 	} else {
+	// 		rf.resetElectionTimer()
+	// 	}
+	// 	//rf.heartbeat = true
+	// 	reply.Success = true
+	// 	return
+	// }
+
 }
 
 // REVIEW - The return value is never used
@@ -284,9 +309,21 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	index := -1
 	term := -1
-	isLeader := true
-
+	isLeader := (rf.state == Leader)
+	if !isLeader {
+		return index, term, isLeader
+	}
+	index = LastLogIndex(rf.Log)
+	term = rf.currentTerm
+	entry := LogEntry{
+		Command: command,
+		Index:   index,
+		Term:    term,
+	}
+	rf.Log = append(rf.Log, &entry)
+	rf.SendEntries(&entry)
 	// Your code here (3B).
+	DPrintf("3B: Start function is called.")
 
 	return index, term, isLeader
 }
@@ -439,6 +476,18 @@ func (rf *Raft) SendHeartbeats() {
 	}()
 }
 
+func (rf *Raft) SendEntries(entry *LogEntry) {
+	//TODO -
+
+	for i := range rf.peers {
+		if i == rf.me {
+			continue
+		}
+		args := MakeAppendEntriesArgs(rf.currentTerm, rf.me, 0, 0, make([]LogEntry, entry.Index), rf.commitIndex)
+		copy(args.Entries, []LogEntry{*entry})
+		rf.sendAppendEntries(i, &args, &AppendEntriesReply{})
+	}
+}
 func (rf *Raft) StartElection() {
 	rf.mu.Lock()
 	rf.state = Candidate

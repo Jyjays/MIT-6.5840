@@ -63,3 +63,10 @@ func (rf *Raft) resetElectionTimer() {
 func (rf *Raft) checkElectionTimeout() bool {
 	return time.Now().After(rf.electionTimeout)
 }
+
+func LastLogIndex(log []*LogEntry) int {
+	if len(log) == 0 {
+		return 0
+	}
+	return log[len(log)-1].Index
+}
