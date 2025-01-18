@@ -1,24 +1,108 @@
-2024/12/06 16:33:54 -----------A new lab start--------------
-2024/12/06 16:33:54 -----------A new lab start--------------
-2024/12/06 16:33:54 -----------A new lab start--------------
-2024/12/06 16:33:54 Node 2: Became follower for term 1 due to leader 1
-2024/12/06 16:33:54 Node 0: Became follower for term 1 due to leader 1
-2024/12/06 16:33:57 -----------A new lab start--------------
-2024/12/06 16:33:57 -----------A new lab start--------------
-2024/12/06 16:33:57 -----------A new lab start--------------
-2024/12/06 16:33:57 Node 0: Became follower for term 1 due to leader 1
-2024/12/06 16:33:57 Node 2: Became follower for term 1 due to leader 1
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 -----------A new lab start--------------
-2024/12/06 16:34:02 Node 6: Became follower for term 1 due to leader 4
-2024/12/06 16:34:02 Node 2: Became follower for term 1 due to leader 4
-2024/12/06 16:34:02 Node 1: Became follower for term 1 due to leader 4
-2024/12/06 16:34:02 Node 0: Became follower for term 1 due to leader 4
-2024/12/06 16:34:02 Node 5: Became follower for term 1 due to leader 4
-2024/12/06 16:34:02 Node 3: Became follower for term 1 due to leader 4
-2024/12/06 16:34:03 Node 5: Became follower for term 2 due to leader 2
+2025/01/18 18:12:24 Node 1: Start agreement for command 100 at index 1
+2025/01/18 18:12:24 Node 1: Log [{<nil> 0 0} {100 1 1}] Index 1 Term 1
+2025/01/18 18:12:24 prevEntry: {<nil> 0 0}
+2025/01/18 18:12:24 prevEntry: {<nil> 0 0}
+2025/01/18 18:12:24 args &{1 1 0 0 [{100 1 1}] 0}
+2025/01/18 18:12:24 Node 2 commitIndex 1
+2025/01/18 18:12:24 args &{1 1 0 0 [{100 1 1}] 0}
+2025/01/18 18:12:24 Node 0 commitIndex 1
+2025/01/18 18:12:24 successNum 3, commitHold 1
+2025/01/18 18:12:24 Node 1 commitIndex 1
+2025/01/18 18:12:24 one(100) index=1
+2025/01/18 18:12:24 one(100) index=1 nd=0 cmd1=<nil>
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:24 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:25 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 18:12:26 one(100) index=1 nd=1 cmd1=100
+2025/01/18 21:18:07 2. Node 0: Become follower for term 7 from state: 2
+2025/01/18 21:18:09 2. Node 0: Become follower for term 9 from state: 2
