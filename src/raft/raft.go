@@ -222,19 +222,21 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 }
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
+	DPrintf("Node %d: AppendEntries start", rf.me)
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 	//DPrintf("Node %d: Recive AppendEntries for term %d\n", rf.me, args.Term)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		reply.Success = false
+		DPrintf("Node %d: AppendEntries mismatch term %d\n", rf.me, args.Term)
 		return
 	}
 	//
 	//NOTE - AppendEntries 3A
 	//FIXME - If this rf server is follower, and recive the heartbeat
 	//1. if the rf's voteFor is not -1, then it should be reset to -1
-
+	DPrintf("Node %d: media of AppendEntries", rf.me)
 	//NOTE - if this rf is candidate, but recive heartbeat from another leader
 	// and its term is not smaller than this rf's term , then this rf should become follower
 	if len(args.Entries) == 0 {
@@ -247,7 +249,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		} else {
 			rf.resetElectionTimer()
 		}
-		//rf.heartbeat = true
 		DPrintf("<<AppendEntries:Node %d: Recive heartbeat, args.leaderCommit %d, rf.commitIndex %d\n", rf.me, args.LeaderCommit, rf.commitIndex)
 		newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
 		//DPrintf("AppendEntries: Node %d commitIndex %d, newCommitIndex %d\n", rf.me, rf.commitIndex, newCommitIndex)
@@ -255,6 +256,8 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.commitIndex = newCommitIndex
 			rf.applyCond.Signal()
 		}
+		DPrintf("Node %d: end of AppendEntries", rf.me)
+
 		reply.Success = true
 		return
 	}
@@ -272,7 +275,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	} else {
 		reply.Success = false
 	}
-
+	DPrintf("Node %d: end of AppendEntries", rf.me)
 	reply.Success = true
 	return
 
@@ -323,15 +326,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
-	// for i := range rf.peers {
-	// 	if i == rf.me {
-	// 		continue
-	// 	}
-	// 	DPrintf("Node %d: Signal to Node %d\n", rf.me, i)
-	// 	go func(server int) {
-	// 		rf.replicateCond[server].Signal()
-	// 	}(i)
-	// }
 	go func() {
 		for i := range rf.peers {
 			if i == rf.me {
@@ -377,7 +371,7 @@ func (rf *Raft) applier() {
 func (rf *Raft) replicator(peer int) {
 	//DPrintf("Node %d: Start replicator for peer %d\n", rf.me, peer)
 	rf.replicateCond[peer].L.Lock()
-	defer rf.replicateCond[peer].L.Unlock()
+
 	for rf.killed() == false {
 
 		rf.replicateCond[peer].Wait()
@@ -404,22 +398,19 @@ func (rf *Raft) replicator(peer int) {
 
 				if rf.checkNeedCommit() {
 					DPrintf("Node %d: checkNeedCommit\n", rf.me)
-					rf.mu.Unlock()
 					rf.applyCond.Signal()
 				}
 			} else {
 				if reply.Term > rf.currentTerm {
-					rf.mu.Unlock()
 					rf.becomeFollower(reply.Term, -1)
 				} else {
 					rf.nextIndex[peer] = args.PrevLogIndex
-					rf.mu.Unlock()
 				}
 			}
-		} else {
-			rf.mu.Unlock()
 		}
+		rf.mu.Unlock()
 	}
+	rf.replicateCond[peer].L.Unlock()
 }
 
 func (rf *Raft) checkNeedCommit() bool {
@@ -590,16 +581,14 @@ func (rf *Raft) SendHeartbeats() {
 					continue
 				}
 				go func(server int) {
-					rf.mu.RLock()
+
 					args := rf.MakeHeartbeatArgs(server)
-					args.LeaderCommit = 1
-					rf.mu.RUnlock()
+
 					reply := AppendEntriesReply{}
 					if rf.state != Leader {
 						return
 					}
-					DPrintf("Heartbeat:Leader's commitIndex %d\n", rf.commitIndex)
-					//DPrintf("Node %d: Send heartbeat to Node %d for term %d\n", rf.me, server, currentTerm)
+					//DPrintf("Heartbeat send: Node %d: Send heartbeat to Node %d for term %d\n", rf.me, server, rf.currentTerm)
 					if rf.sendAppendEntries(server, &args, &reply) {
 						rf.mu.Lock()
 						defer rf.mu.Unlock()
@@ -608,6 +597,7 @@ func (rf *Raft) SendHeartbeats() {
 							rf.becomeFollower(reply.Term, -1)
 						}
 					}
+					//DPrintf("HeartBeat accept reply from Node:%d\n", server)
 				}(i)
 			}
 			<-ticker.C // 等待下一个心跳周期
