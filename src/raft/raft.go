@@ -371,7 +371,7 @@ func (rf *Raft) applier() {
 func (rf *Raft) replicator(peer int) {
 	//DPrintf("Node %d: Start replicator for peer %d\n", rf.me, peer)
 	rf.replicateCond[peer].L.Lock()
-
+	defer rf.replicateCond[peer].L.Unlock()
 	for rf.killed() == false {
 
 		rf.replicateCond[peer].Wait()
@@ -410,7 +410,7 @@ func (rf *Raft) replicator(peer int) {
 		}
 		rf.mu.Unlock()
 	}
-	rf.replicateCond[peer].L.Unlock()
+	//rf.replicateCond[peer].L.Unlock()
 }
 
 func (rf *Raft) checkNeedCommit() bool {
