@@ -245,7 +245,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 func delete_tmp_file(taskId int, tasktype Identity) {
 	switch tasktype {
 	case MAP:
-		inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d-*"))
+		inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d-*", taskId))
 		if err != nil {
 			log.Fatalf("reduce :cannot read %v", taskId)
 		}
