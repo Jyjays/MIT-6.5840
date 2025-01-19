@@ -9,11 +9,29 @@ import (
 // Debugging
 const Debug = true
 
+func currentTime() string {
+	return time.Now().Format("2025-01-19 15:37:05")
+}
+
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
 		log.Printf(format, a...)
 		//fmt.Printf(format, a...)
 	}
+}
+
+func Max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func Min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // Make function for RequestVote and AppendEntries

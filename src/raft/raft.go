@@ -22,6 +22,7 @@ import (
 
 	"log"
 	"os"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -95,8 +96,10 @@ type Raft struct {
 	nextIndex  []int
 	matchIndex []int
 
-	applyCh chan ApplyMsg
-	state   State
+	applyCh       chan ApplyMsg
+	applyCond     *sync.Cond
+	replicateCond []*sync.Cond
+	state         State
 	//REVIEW - time.Time is not recommended by the student manual
 	electionTimeout time.Time
 }
@@ -245,6 +248,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			rf.resetElectionTimer()
 		}
 		//rf.heartbeat = true
+		DPrintf("<<AppendEntries:Node %d: Recive heartbeat, args.leaderCommit %d, rf.commitIndex %d\n", rf.me, args.LeaderCommit, rf.commitIndex)
+		newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
+		//DPrintf("AppendEntries: Node %d commitIndex %d, newCommitIndex %d\n", rf.me, rf.commitIndex, newCommitIndex)
+		if newCommitIndex > rf.commitIndex {
+			rf.commitIndex = newCommitIndex
+			rf.applyCond.Signal()
+		}
 		reply.Success = true
 		return
 	}
@@ -258,9 +268,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if isMatched(lastLog, rf.Log[args.PrevLogIndex]) {
 		rf.Log = append(rf.Log[:args.PrevLogIndex+1], args.Entries...)
 
-		rf.commitIndex = rf.getLastLog().Index
-
-		DPrintf("Node %d commitIndex %d\n", rf.me, rf.commitIndex)
+		DPrintf("Node %d receive AppendEntries for term %d, log %v\n", rf.me, args.Term, rf.Log)
 	} else {
 		reply.Success = false
 	}
@@ -294,14 +302,17 @@ func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *Ap
 // term. the third return value is true if this server believes it is
 // the leader.
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+
 	index := -1
 	term := -1
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
 	isLeader := (rf.state == Leader)
 	if !isLeader {
 		return index, term, isLeader
 	}
 	index = rf.getLastLog().Index + 1
-	DPrintf("Node %d: Start agreement for command %v at index %d\n", rf.me, command, index)
+	//DPrintf("Node %d: Start agreement for command %v at index %d\n", rf.me, command, index)
 	term = rf.currentTerm
 	entry := LogEntry{
 		Command: command,
@@ -312,59 +323,136 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
-	var successNum int32 = 1
-	commitHold := len(rf.peers) / 2
-	var wg sync.WaitGroup
-	for peer := range rf.peers {
-
-		if peer == rf.me {
-			continue
+	// for i := range rf.peers {
+	// 	if i == rf.me {
+	// 		continue
+	// 	}
+	// 	DPrintf("Node %d: Signal to Node %d\n", rf.me, i)
+	// 	go func(server int) {
+	// 		rf.replicateCond[server].Signal()
+	// 	}(i)
+	// }
+	go func() {
+		for i := range rf.peers {
+			if i == rf.me {
+				continue
+			}
+			rf.replicateCond[i].Signal()
 		}
-		wg.Add(1)
+	}()
+	return index, term, isLeader
+}
+
+func (rf *Raft) applier() {
+	for rf.killed() == false {
+		rf.mu.Lock()
+		// check the commitIndex is advanced
+		for rf.commitIndex <= rf.lastApplied {
+			// need to wait for the commitIndex to be advanced
+			rf.applyCond.Wait()
+		}
+
+		// apply log entries to state machine
+		firstLogIndex, commitIndex, lastApplied := rf.getFirstLog().Index, rf.commitIndex, rf.lastApplied
+		entries := make([]LogEntry, commitIndex-lastApplied)
+		copy(entries, rf.Log[lastApplied-firstLogIndex+1:commitIndex-firstLogIndex+1])
+		rf.mu.Unlock()
+		DPrintf("applier:Node %d: commitIndex %d lastApplied %d\n", rf.me, rf.commitIndex, rf.lastApplied)
+		// send the apply message to applyCh for service/State Machine Replica
+		for _, entry := range entries {
+			rf.applyCh <- ApplyMsg{
+				CommandValid: true,
+				Command:      entry.Command,
+				CommandIndex: entry.Index,
+			}
+		}
+		rf.mu.Lock()
+		DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
+		// use commitIndex rather than rf.commitIndex because rf.commitIndex may change during the Unlock() and Lock()
+		rf.lastApplied = Max(rf.lastApplied, commitIndex)
+		rf.mu.Unlock()
+	}
+}
+
+func (rf *Raft) replicator(peer int) {
+	//DPrintf("Node %d: Start replicator for peer %d\n", rf.me, peer)
+	rf.replicateCond[peer].L.Lock()
+	defer rf.replicateCond[peer].L.Unlock()
+	for rf.killed() == false {
+
+		rf.replicateCond[peer].Wait()
+		rf.mu.Lock()
+		// defer rf.mu.Unlock()
+		if rf.state != Leader {
+			rf.mu.Unlock()
+			return
+		}
+		// start replicate log entries to peer
 		prevEntry := rf.getPrevEntry(peer)
-		DPrintf("prevEntry: %v\n", prevEntry)
-		var entries []LogEntry
+		entries := make([]LogEntry, 0)
 		if prevEntry.Index+1 <= len(rf.Log)-1 {
 			entries = rf.Log[prevEntry.Index+1:]
-		} else {
-			entries = append(entries, entry)
 		}
 		args := rf.genAppendEntriesArgs(prevEntry.Index)
+		args.Entries = entries
 		reply := AppendEntriesReply{}
 
-		go func(server int) {
-			defer wg.Done()
-			if rf.sendAppendEntries(server, args, &reply) {
-				rf.mu.Lock()
-				defer rf.mu.Unlock()
-				if reply.Success {
-					rf.nextIndex[server] = args.PrevLogIndex + len(args.Entries)
-					rf.matchIndex[server] = args.PrevLogIndex + len(args.Entries)
-					atomic.AddInt32(&successNum, 1)
+		if rf.sendAppendEntries(peer, args, &reply) {
+			if reply.Success {
+				rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
+				rf.nextIndex[peer] = rf.matchIndex[peer] + 1
+
+				if rf.checkNeedCommit() {
+					DPrintf("Node %d: checkNeedCommit\n", rf.me)
+					rf.mu.Unlock()
+					rf.applyCond.Signal()
+				}
+			} else {
+				if reply.Term > rf.currentTerm {
+					rf.mu.Unlock()
+					rf.becomeFollower(reply.Term, -1)
 				} else {
-					if reply.Term > rf.currentTerm {
-						rf.becomeFollower(reply.Term, -1)
-					} else {
-						rf.nextIndex[server] = args.PrevLogIndex
-					}
+					rf.nextIndex[peer] = args.PrevLogIndex
+					rf.mu.Unlock()
 				}
 			}
-		}(peer)
-
-	}
-	wg.Wait()
-
-	DPrintf("successNum %d, commitHold %d\n", successNum, commitHold)
-	if atomic.LoadInt32(&successNum) > int32(commitHold) {
-		rf.commitIndex = index
-		rf.applyCh <- ApplyMsg{
-			CommandValid: true,
-			Command:      command,
-			CommandIndex: index,
+		} else {
+			rf.mu.Unlock()
 		}
-		DPrintf("Node %d commitIndex %d\n", rf.me, rf.commitIndex)
 	}
-	return index, term, isLeader
+}
+
+func (rf *Raft) checkNeedCommit() bool {
+	// According the matchIndex, check if there is a log entry that is replicated by a majority of servers
+	// and has not been committed yet
+	// if there is such a log entry, commit it
+	// if there is no such a log entry, return false
+	// if there is such a log entry, return true
+	// [10, 11, 12, 12, 13]
+	// After sort , we can find which index was replicated by majority of servers
+	// sort the matchIndex
+	length := len(rf.matchIndex)
+	matchIndex := make([]int, length)
+	copy(matchIndex, rf.matchIndex)
+	sort.Ints(matchIndex)
+	// find the index that is replicated by a majority of servers
+
+	commitIndex := matchIndex[length-length/2-1]
+	DPrintf("Leader:Node %d: matchIndex %v, commitIndex %d\n", rf.me, matchIndex, commitIndex)
+	//DPrintf("Node %d: commitIndex %d, rf.commitIndes %d\n", rf.me, commitIndex, rf.commitIndex)
+	if commitIndex > rf.commitIndex {
+		// check the term of the log entry
+		if rf.Log[commitIndex].Term == rf.currentTerm {
+			DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
+			rf.commitIndex = commitIndex
+			DPrintf("Leader's commitIndex %d\n", rf.commitIndex)
+			return true
+		}
+	} else {
+		return false
+	}
+	return false
+
 }
 
 // the tester doesn't halt goroutines created by Raft after each test,
@@ -439,6 +527,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.persister = persister
 	rf.me = me
 	rf.applyCh = applyCh
+	rf.applyCond = sync.NewCond(&rf.mu)
+	rf.replicateCond = make([]*sync.Cond, len(rf.peers))
 
 	// Your initialization code here (3A, 3B, 3C).
 	rf.Init()
@@ -447,12 +537,23 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.readPersist(persister.ReadRaftState())
 	rf.resetElectionTimer()
 	// start ticker goroutine to start elections
+
+	for peer := range peers {
+		rf.matchIndex[peer], rf.nextIndex[peer] = 0, rf.getLastLog().Index+1
+		if peer != rf.me {
+			rf.replicateCond[peer] = sync.NewCond(&sync.Mutex{})
+			// start replicator goroutine to send log entries to peer
+			go rf.replicator(peer)
+		}
+	}
+
+	go rf.applier()
 	go rf.ticker()
 
 	return rf
 }
 
-// ------------------utils-------------------
+// ------------------actions-------------------
 
 // Init function
 func (rf *Raft) Init() {
@@ -472,29 +573,32 @@ func (rf *Raft) SendHeartbeats() {
 		ticker := time.NewTicker(HeartbeatInterval) // 心跳周期
 		defer ticker.Stop()
 		for {
-			rf.mu.Lock()
+			rf.mu.RLock()
 			// 如果不再是 Leader，退出心跳循环
 
 			if rf.state != Leader {
 				//DPrintf("Node %d: Stop sending heartbeat for term %d\n", rf.me, rf.currentTerm)
-				rf.mu.Unlock()
+				rf.mu.RUnlock()
 				return
 			}
 			// 获取当前 Term 和其他状态
 
-			rf.mu.Unlock()
+			rf.mu.RUnlock()
 			// 向所有 Follower 发送心跳
 			for i := range rf.peers {
 				if i == rf.me {
 					continue
 				}
 				go func(server int) {
+					rf.mu.RLock()
 					args := rf.MakeHeartbeatArgs(server)
+					args.LeaderCommit = 1
+					rf.mu.RUnlock()
 					reply := AppendEntriesReply{}
 					if rf.state != Leader {
 						return
 					}
-
+					DPrintf("Heartbeat:Leader's commitIndex %d\n", rf.commitIndex)
 					//DPrintf("Node %d: Send heartbeat to Node %d for term %d\n", rf.me, server, currentTerm)
 					if rf.sendAppendEntries(server, &args, &reply) {
 						rf.mu.Lock()
@@ -509,6 +613,7 @@ func (rf *Raft) SendHeartbeats() {
 			<-ticker.C // 等待下一个心跳周期
 		}
 	}()
+
 }
 
 func (rf *Raft) StartElection() {
