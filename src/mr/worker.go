@@ -192,6 +192,7 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 			log.Fatalf("cannot open %v", filename)
 		}
 		dec := json.NewDecoder(file)
+		//REVIEW - why is this an infinite loop?
 		for {
 			var kv KeyValue
 			if err := dec.Decode(&kv); err != nil {

@@ -159,139 +159,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 
 }
 
-// example RequestVote RPC arguments structure.
-// field names must start with capital letters!
-type RequestVoteArgs struct {
-	// Your data here (3A, 3B).
-	Term         int
-	CandidateId  int
-	LastLogIndex int
-	LastLogTerm  int
-}
-
-// example RequestVote RPC reply structure.
-// field names must start with capital letters!
-type RequestVoteReply struct {
-	// Your data here (3A).
-	Term        int
-	VoteGranted bool
-}
-
-type AppendEntriesArgs struct {
-	Term         int
-	LeaderId     int
-	PrevLogIndex int
-	PrevLogTerm  int
-	Entries      []LogEntry
-	LeaderCommit int
-}
-
-type AppendEntriesReply struct {
-	Term    int
-	Success bool
-}
-
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	reply.Term = rf.currentTerm
-
-	if args.Term < rf.currentTerm {
-		reply.VoteGranted = false
-		return
-	}
-
-	if args.Term > rf.currentTerm {
-		//DPrintf("1. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
-		rf.becomeFollower(args.Term, args.CandidateId)
-		reply.VoteGranted = true
-		return
-	}
-	if rf.state != Follower {
-		reply.VoteGranted = false
-		return
-	}
-
-	if rf.voteFor >= 0 && rf.voteFor != args.CandidateId {
-		reply.VoteGranted = false
-		return
-	}
-
-	rf.voteFor = args.CandidateId
-	reply.VoteGranted = true
-}
-
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	DPrintf("Node %d: AppendEntries start", rf.me)
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	//DPrintf("Node %d: Recive AppendEntries for term %d\n", rf.me, args.Term)
-	reply.Term = rf.currentTerm
-	if args.Term < rf.currentTerm {
-		reply.Success = false
-		DPrintf("Node %d: AppendEntries mismatch term %d\n", rf.me, args.Term)
-		return
-	}
-	//
-	//NOTE - AppendEntries 3A
-	//FIXME - If this rf server is follower, and recive the heartbeat
-	//1. if the rf's voteFor is not -1, then it should be reset to -1
-	DPrintf("Node %d: media of AppendEntries", rf.me)
-	//NOTE - if this rf is candidate, but recive heartbeat from another leader
-	// and its term is not smaller than this rf's term , then this rf should become follower
-	if len(args.Entries) == 0 {
-		//NOTE - if this rf is candidate, but recive heartbeat from another leader
-		// and its term is not smaller than this rf's term , then this rf should become follower
-		rf.voteFor = -1
-		if rf.state != Follower {
-			DPrintf("2. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
-			rf.becomeFollower(args.Term, -1)
-		} else {
-			rf.resetElectionTimer()
-		}
-		DPrintf("<<AppendEntries:Node %d: Recive heartbeat, args.leaderCommit %d, rf.commitIndex %d\n", rf.me, args.LeaderCommit, rf.commitIndex)
-		newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
-		//DPrintf("AppendEntries: Node %d commitIndex %d, newCommitIndex %d\n", rf.me, rf.commitIndex, newCommitIndex)
-		if newCommitIndex > rf.commitIndex {
-			rf.commitIndex = newCommitIndex
-			rf.applyCond.Signal()
-		}
-		DPrintf("Node %d: end of AppendEntries", rf.me)
-
-		reply.Success = true
-		return
-	}
-	//NOTE - AppendEntries 3B
-	//REVIEW - Using the slowest but most reliable way to append logs
-	// compare the logs between the leader and the follower one by one
-	// if there's a conflict, then delete the conflict logs and append the new logs
-	lastLog := rf.getLastLog()
-
-	DPrintf("args %v\n", args)
-	if isMatched(lastLog, rf.Log[args.PrevLogIndex]) {
-		rf.Log = append(rf.Log[:args.PrevLogIndex+1], args.Entries...)
-
-		DPrintf("Node %d receive AppendEntries for term %d, log %v\n", rf.me, args.Term, rf.Log)
-	} else {
-		reply.Success = false
-	}
-	DPrintf("Node %d: end of AppendEntries", rf.me)
-	reply.Success = true
-	return
-
-}
-
-// REVIEW - The return value is never used
-func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *RequestVoteReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestVote", args, reply)
-	return ok
-}
-
-func (rf *Raft) sendAppendEntries(server int, args *AppendEntriesArgs, reply *AppendEntriesReply) bool {
-	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
-	return ok
-}
-
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
 // server isn't the leader, returns false. otherwise start the
@@ -323,7 +190,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 	}
 	rf.Log = append(rf.Log, entry)
-	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
+	//DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
 	go func() {
@@ -351,7 +218,7 @@ func (rf *Raft) applier() {
 		entries := make([]LogEntry, commitIndex-lastApplied)
 		copy(entries, rf.Log[lastApplied-firstLogIndex+1:commitIndex-firstLogIndex+1])
 		rf.mu.Unlock()
-		DPrintf("applier:Node %d: commitIndex %d lastApplied %d\n", rf.me, rf.commitIndex, rf.lastApplied)
+		//DPrintf("applier:Node %d: commitIndex %d lastApplied %d\n", rf.me, rf.commitIndex, rf.lastApplied)
 		// send the apply message to applyCh for service/State Machine Replica
 		for _, entry := range entries {
 			rf.applyCh <- ApplyMsg{
@@ -403,9 +270,24 @@ func (rf *Raft) replicator(peer int) {
 			} else {
 				if reply.Term > rf.currentTerm {
 					rf.becomeFollower(reply.Term, -1)
+				} else if reply.Term == rf.currentTerm {
+					//DPrintf("Node %d: ConflictIndex %d\n", rf.me, reply.ConflictIndex)
+					rf.nextIndex[peer] = reply.ConflictIndex
+					if reply.ConflictTerm != -1 {
+						// find the first index of the conflict term
+						firstLogIndex := rf.getFirstLog().Index
+						for index := args.PrevLogIndex - 1; index >= firstLogIndex; index-- {
+							if rf.Log[index-firstLogIndex].Term == reply.ConflictTerm {
+								rf.nextIndex[peer] = index
+								break
+							}
+						}
+					}
 				} else {
-					rf.nextIndex[peer] = args.PrevLogIndex
+					//DPrintf("Node %d: Decrease nextIndex for peer %d\n", rf.me, peer)
+					rf.nextIndex[peer] = Max(1, rf.nextIndex[peer]-1)
 				}
+
 			}
 		}
 		rf.mu.Unlock()
@@ -429,12 +311,12 @@ func (rf *Raft) checkNeedCommit() bool {
 	// find the index that is replicated by a majority of servers
 
 	commitIndex := matchIndex[length-length/2-1]
-	DPrintf("Leader:Node %d: matchIndex %v, commitIndex %d\n", rf.me, matchIndex, commitIndex)
+	//DPrintf("Leader:Node %d: matchIndex %v, commitIndex %d\n", rf.me, matchIndex, commitIndex)
 	//DPrintf("Node %d: commitIndex %d, rf.commitIndes %d\n", rf.me, commitIndex, rf.commitIndex)
 	if commitIndex > rf.commitIndex {
 		// check the term of the log entry
 		if rf.Log[commitIndex].Term == rf.currentTerm {
-			DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
+			//DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
 			rf.commitIndex = commitIndex
 			DPrintf("Leader's commitIndex %d\n", rf.commitIndex)
 			return true
@@ -608,13 +490,14 @@ func (rf *Raft) SendHeartbeats() {
 
 func (rf *Raft) StartElection() {
 	rf.mu.Lock()
+	DPrintf("Node %d: Start election for term %d\n", rf.me, rf.currentTerm+1)
 	rf.state = Candidate
 	rf.currentTerm += 1
 	rf.voteFor = rf.me
+
 	rf.resetElectionTimer() // 重置选举超时时间
 	//rf.persist()            // 持久化状态
-	currentTerm := rf.currentTerm
-	rargs := MakeRequestVoteArgs(currentTerm, rf.me, len(rf.Log), currentTerm)
+	rargs := rf.MakeRequestVoteArgs()
 	rf.mu.Unlock()
 
 	//REVIEW - wg的作用（gpt写的-_-）
@@ -647,9 +530,14 @@ func (rf *Raft) StartElection() {
 					atomic.AddInt32(&votes, 1)
 					if atomic.LoadInt32(&votes) > int32(voteThreshold) {
 						rf.state = Leader
+						// Init nextIndex and matchIndex
+						for i := range rf.peers {
+							rf.nextIndex[i] = len(rf.Log)
+							rf.matchIndex[i] = 0
+						}
 						rf.persist()
 						rf.SendHeartbeats()
-						//DPrintf("Node %d: Became leader for term %d\n", rf.me, rf.currentTerm)
+						DPrintf("Node %d: Became leader for term %d\n", rf.me, rf.currentTerm)
 					}
 				}
 			}

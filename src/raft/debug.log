@@ -1,0 +1,24 @@
+2025/01/21 16:47:23 Node 2: Start election for term 1
+2025/01/21 16:47:23 [Server 1 become follower, term 1, vote for 2
+2025/01/21 16:47:23 Node 2: Became leader for term 1
+2025/01/21 16:47:23 <<AppendEntries:Node 1: Recive heartbeat, args.leaderCommit 0, rf.commitIndex 0
+2025/01/21 16:47:23 [Server 0 become follower, term 1, vote for 2
+2025/01/21 16:47:23 <<AppendEntries:Node 0: Recive heartbeat, args.leaderCommit 0, rf.commitIndex 0
+2025/01/21 16:47:23 Leader's commitIndex 1
+2025/01/21 16:47:23 Node 2: checkNeedCommit
+2025/01/21 16:47:23 {Node 2} applies log entries from index 0 to 1 in term 1
+2025/01/21 16:47:23 <<AppendEntries:Node 1: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 0
+2025/01/21 16:47:23 {Node 1} applies log entries from index 0 to 1 in term 1
+2025/01/21 16:47:23 <<AppendEntries:Node 0: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 0
+2025/01/21 16:47:23 {Node 0} applies log entries from index 0 to 1 in term 1
+2025/01/21 16:47:23 <<AppendEntries:Node 1: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 1
+2025/01/21 16:47:23 <<AppendEntries:Node 0: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 1
+2025/01/21 16:47:23 <<AppendEntries:Node 1: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 1
+2025/01/21 16:47:23 <<AppendEntries:Node 0: Recive heartbeat, args.leaderCommit 1, rf.commitIndex 1
+2025/01/21 16:47:24 Leader's commitIndex 2
+2025/01/21 16:47:24 Node 2: checkNeedCommit
+2025/01/21 16:47:24 Node 1: Start election for term 2
+2025/01/21 16:47:24 [Server 1 become follower, term 2, vote for -1
+2025/01/21 16:47:25 Node 0: Start election for term 2
+2025/01/21 16:47:25 [Server 0 become follower, term 2, vote for -1
+2025/01/21 16:47:25 Node 0: Start election for term 3

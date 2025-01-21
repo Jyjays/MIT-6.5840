@@ -35,20 +35,31 @@ func Min(a, b int) int {
 }
 
 // Make function for RequestVote and AppendEntries
-func MakeRequestVoteArgs(term int, candidateId int, lastLogIndex int, lastLogTerm int) RequestVoteArgs {
-	args := RequestVoteArgs{}
-	args.Term = term
-	args.CandidateId = candidateId
-	args.LastLogIndex = lastLogIndex
-	args.LastLogTerm = lastLogTerm
-	return args
-}
+//
+//	func MakeRequestVoteArgs(term int, candidateId int, lastLogIndex int, lastLogTerm int) RequestVoteArgs {
+//		args := RequestVoteArgs{}
+//		args.Term = term
+//		args.CandidateId = candidateId
+//		args.LastLogIndex = lastLogIndex
+//		args.LastLogTerm = lastLogTerm
+//		return args
+//	}
 func MakeRequestVoteReply(term int, voteGranted bool) RequestVoteReply {
 	reply := RequestVoteReply{}
 	reply.Term = term
 	reply.VoteGranted = voteGranted
 	return reply
 }
+
+func (rf *Raft) MakeRequestVoteArgs() RequestVoteArgs {
+	args := RequestVoteArgs{}
+	args.Term = rf.currentTerm
+	args.CandidateId = rf.me
+	args.LastLogIndex = rf.getLastLog().Index
+	args.LastLogTerm = rf.getLastLog().Term
+	return args
+}
+
 func MakeAppendEntriesArgs(term int, leaderId int, prevLogIndex int, prevLogTerm int, entries []LogEntry, leaderCommit int) AppendEntriesArgs {
 	args := AppendEntriesArgs{}
 	args.Term = term
@@ -87,6 +98,7 @@ func isMatched(lastLog LogEntry, prevLog LogEntry) bool {
 func (rf *Raft) becomeFollower(term int, candidateID int) {
 	// rf.mu.Lock()
 	// defer rf.mu.Unlock()
+	DPrintf("[Server %d become follower, term %d, vote for %d", rf.me, term, candidateID)
 	rf.state = Follower
 	rf.currentTerm = term
 	rf.voteFor = candidateID
