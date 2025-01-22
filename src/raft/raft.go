@@ -70,8 +70,8 @@ type LogEntry struct {
 // NOTE - 预定义区
 // Time define
 const (
-	HeartbeatInterval = 200 * time.Millisecond
-	ElectionTimeout   = 300 * time.Millisecond
+	HeartbeatInterval = 125
+	ElectionTimeout   = 1000
 )
 
 // A Go object implementing a single Raft peer.
@@ -182,7 +182,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		return index, term, isLeader
 	}
 	index = rf.getLastLog().Index + 1
-	//DPrintf("Node %d: Start agreement for command %v at index %d\n", rf.me, command, index)
+	DPrintf("Node %d: Start agreement for command %v at index %d\n", rf.me, command, index)
 	term = rf.currentTerm
 	entry := LogEntry{
 		Command: command,
@@ -231,6 +231,7 @@ func (rf *Raft) applier() {
 		DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
 		// use commitIndex rather than rf.commitIndex because rf.commitIndex may change during the Unlock() and Lock()
 		rf.lastApplied = Max(rf.lastApplied, commitIndex)
+		rf.resetElectionTimer()
 		rf.mu.Unlock()
 	}
 }
@@ -366,7 +367,7 @@ func (rf *Raft) ticker() {
 
 		// pause for a random amount of time between 50 and 350
 		// milliseconds.
-		ms := 300 //+ (rand.Int63() % 300)
+		ms := ElectionTimeout //+ (rand.Int63() % 300)
 		time.Sleep(time.Duration(ms) * time.Millisecond)
 
 		//REVIEW - start election
@@ -441,9 +442,10 @@ func (rf *Raft) Init() {
 }
 
 func (rf *Raft) SendHeartbeats() {
+	DPrintf("Node %d: SendHeartbeats\n", rf.me)
 	// 启动心跳循环
 	go func() {
-		ticker := time.NewTicker(HeartbeatInterval) // 心跳周期
+		ticker := time.NewTicker(time.Duration(HeartbeatInterval) * time.Millisecond) // 心跳周期
 		defer ticker.Stop()
 		for {
 			rf.mu.RLock()

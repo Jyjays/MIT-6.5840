@@ -89,16 +89,19 @@ func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
 	return reply
 }
 
-func isMatched(lastLog LogEntry, prevLog LogEntry) bool {
-	if lastLog.Index == -1 {
-		return true
-	}
-	return lastLog.Term == prevLog.Term && lastLog.Index == prevLog.Index
+func (rf *Raft) isMatched(index, term int) bool {
+	return index <= rf.getLastLog().Index && term == rf.Log[index-rf.getFirstLog().Index].Term
 }
+
+func (rf *Raft) isUpToDate(index, term int) bool {
+	lastLog := rf.getLastLog()
+	return term > lastLog.Term || (term == lastLog.Term && index >= lastLog.Index)
+}
+
 func (rf *Raft) becomeFollower(term int, candidateID int) {
 	// rf.mu.Lock()
 	// defer rf.mu.Unlock()
-	DPrintf("[Server %d become follower, term %d, vote for %d", rf.me, term, candidateID)
+	//DPrintf("[Server %d become follower, term %d, vote for %d", rf.me, term, candidateID)
 	rf.state = Follower
 	rf.currentTerm = term
 	rf.voteFor = candidateID
@@ -106,7 +109,7 @@ func (rf *Raft) becomeFollower(term int, candidateID int) {
 }
 
 func (rf *Raft) resetElectionTimer() {
-	rf.electionTimeout = time.Now().Add(time.Duration(300+rand.Intn(1000)) * time.Millisecond)
+	rf.electionTimeout = time.Now().Add(time.Duration(rand.Intn(ElectionTimeout)+ElectionTimeout) * time.Millisecond)
 }
 
 func (rf *Raft) checkElectionTimeout() bool {
@@ -140,4 +143,14 @@ func (rf *Raft) genAppendEntriesArgs(prevLogIndex int) *AppendEntriesArgs {
 		Entries:      entries,
 	}
 	return args
+}
+
+func shrinkEntries(entries []LogEntry) []LogEntry {
+	const lenMultiple = 2
+	if cap(entries) > len(entries)*lenMultiple {
+		newEntries := make([]LogEntry, len(entries))
+		copy(newEntries, entries)
+		return newEntries
+	}
+	return entries
 }
