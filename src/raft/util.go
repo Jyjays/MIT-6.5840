@@ -3,6 +3,7 @@ package raft
 import (
 	"log"
 	"math/rand"
+	"sync"
 	"time"
 )
 
@@ -105,16 +106,69 @@ func (rf *Raft) becomeFollower(term int, candidateID int) {
 	rf.state = Follower
 	rf.currentTerm = term
 	rf.voteFor = candidateID
+	rf.heartbeatTimer.Stop()
 	rf.resetElectionTimer()
 }
 
-func (rf *Raft) resetElectionTimer() {
-	rf.electionTimeout = time.Now().Add(time.Duration(rand.Intn(ElectionTimeout)+ElectionTimeout) * time.Millisecond)
+func (rf *Raft) becomeCandidate() {
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
+	//DPrintf("[Server %d become candidate, term %d", rf.me, rf.currentTerm+1)
+	rf.state = Candidate
+	rf.currentTerm++
+	rf.voteFor = rf.me
+	rf.electionTimer.Stop() // stop election
+	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }
 
-func (rf *Raft) checkElectionTimeout() bool {
-	return time.Now().After(rf.electionTimeout)
+func (rf *Raft) becomeLeader() {
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
+	//DPrintf("[Server %d become leader, term %d", rf.me, rf.currentTerm)
+	rf.state = Leader
+	rf.nextIndex = make([]int, len(rf.peers))
+	rf.matchIndex = make([]int, len(rf.peers))
+	for i := range rf.nextIndex {
+		rf.nextIndex[i] = rf.getLastLog().Index + 1
+	}
+	rf.electionTimer.Stop()
+	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }
+
+const ElectionTimeout = 1000
+const HeartbeatTimeout = 125
+
+type LockedRand struct {
+	mu   sync.Mutex
+	rand *rand.Rand
+}
+
+func (r *LockedRand) Intn(n int) int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.rand.Intn(n)
+}
+
+var GlobalRand = &LockedRand{
+	rand: rand.New(rand.NewSource(time.Now().UnixNano())),
+}
+
+func RandomElectionTimeout() time.Duration {
+	return time.Duration(ElectionTimeout+GlobalRand.Intn(ElectionTimeout)) * time.Millisecond
+}
+
+func StableHeartbeatTimeout() time.Duration {
+	return time.Duration(HeartbeatTimeout) * time.Millisecond
+}
+
+func (rf *Raft) resetElectionTimer() {
+	// rf.electionTimeout = time.Now().Add(time.Duration(rand.Intn(ElectionTimeout)+ElectionTimeout) * time.Millisecond)
+	rf.electionTimer.Reset(RandomElectionTimeout())
+}
+
+// func (rf *Raft) checkElectionTimeout() bool {
+// 	return time.Now().After(rf.electionTimeout)
+// }
 
 func (rf *Raft) getLastLog() LogEntry {
 	return rf.Log[len(rf.Log)-1]
@@ -130,6 +184,8 @@ func (rf *Raft) getPrevEntry(peer int) LogEntry {
 	}
 	return rf.Log[rf.nextIndex[peer]-1]
 }
+
+// TODO - add a parameter to specify the heartbeat and appendEntries
 func (rf *Raft) genAppendEntriesArgs(prevLogIndex int) *AppendEntriesArgs {
 	firstLogIndex := rf.getFirstLog().Index
 	entries := make([]LogEntry, len(rf.Log[prevLogIndex-firstLogIndex+1:]))

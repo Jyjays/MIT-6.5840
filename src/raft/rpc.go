@@ -34,75 +34,75 @@ type AppendEntriesReply struct {
 	Success       bool
 }
 
-func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	defer DPrintf("{Node %v}'s state is {state %v, term %v}} after processing RequestVote,  RequestVoteArgs %v and RequestVoteReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
-	// Reply false if term < currentTerm(§5.1)
-	// if the term is same as currentTerm, and the votedFor is not null and not the candidateId, then reject the vote(§5.2)
-	if args.Term < rf.currentTerm || (args.Term == rf.currentTerm && rf.voteFor != -1 && rf.voteFor != args.CandidateId) {
-		reply.Term, reply.VoteGranted = rf.currentTerm, false
-		return
-	}
-
-	if args.Term > rf.currentTerm {
-		rf.becomeFollower(args.Term, args.CandidateId)
-		rf.persist()
-	}
-
-	// if candidate's log is not up-to-date, reject the vote(§5.4)
-	if !rf.isUpToDate(args.LastLogIndex, args.LastLogTerm) {
-		reply.Term, reply.VoteGranted = rf.currentTerm, false
-		return
-	}
-
-	rf.persist()
-	rf.resetElectionTimer()
-	reply.Term, reply.VoteGranted = rf.currentTerm, true
-}
-
 // func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 // 	rf.mu.Lock()
 // 	defer rf.mu.Unlock()
-// 	reply.Term = rf.currentTerm
-
-// 	if args.Term < rf.currentTerm {
-// 		reply.VoteGranted = false
-// 		return
-// 	}
-
-// 	//NOTE - RequestVote 3B
-// 	// case 1 - args.LastLogTerm < rf.getLastLog().Term
-// 	// case 2 - args.LastLogTerm == rf.getLastLog().Term && args.LastLogIndex < rf.getLastLog().Index
-// 	// case 3 - args.LastLogTerm == rf.getLastLog().Term && args.LastLogIndex == rf.getLastLog().Index
-// 	lastLog := rf.getLastLog()
-// 	if args.LastLogTerm < lastLog.Term {
-// 		reply.VoteGranted = false
-// 		return
-// 	} else if args.LastLogTerm == lastLog.Term && args.LastLogIndex < lastLog.Index {
-// 		reply.VoteGranted = false
+// 	//defer DPrintf("{Node %v}'s state is {state %v, term %v}} after processing RequestVote,  RequestVoteArgs %v and RequestVoteReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
+// 	// Reply false if term < currentTerm(§5.1)
+// 	// if the term is same as currentTerm, and the votedFor is not null and not the candidateId, then reject the vote(§5.2)
+// 	if args.Term < rf.currentTerm || (args.Term == rf.currentTerm && rf.voteFor != -1 && rf.voteFor != args.CandidateId) {
+// 		reply.Term, reply.VoteGranted = rf.currentTerm, false
 // 		return
 // 	}
 
 // 	if args.Term > rf.currentTerm {
-// 		//DPrintf("1. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
 // 		rf.becomeFollower(args.Term, args.CandidateId)
-// 		reply.VoteGranted = true
-// 		return
+// 		rf.persist()
 // 	}
-// 	if rf.state != Follower {
-// 		reply.VoteGranted = false
+
+// 	// if candidate's log is not up-to-date, reject the vote(§5.4)
+// 	if !rf.isUpToDate(args.LastLogIndex, args.LastLogTerm) {
+// 		reply.Term, reply.VoteGranted = rf.currentTerm, false
 // 		return
 // 	}
 
-// 	if rf.voteFor >= 0 && rf.voteFor != args.CandidateId {
-// 		reply.VoteGranted = false
-// 		return
-// 	}
-
-// 	rf.voteFor = args.CandidateId
-// 	reply.VoteGranted = true
+// 	rf.persist()
+// 	rf.resetElectionTimer()
+// 	reply.Term, reply.VoteGranted = rf.currentTerm, true
 // }
+
+func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	reply.Term = rf.currentTerm
+
+	if args.Term < rf.currentTerm {
+		reply.VoteGranted = false
+		return
+	}
+
+	//NOTE - RequestVote 3B
+	// case 1 - args.LastLogTerm < rf.getLastLog().Term
+	// case 2 - args.LastLogTerm == rf.getLastLog().Term && args.LastLogIndex < rf.getLastLog().Index
+	// case 3 - args.LastLogTerm == rf.getLastLog().Term && args.LastLogIndex == rf.getLastLog().Index
+	lastLog := rf.getLastLog()
+	if args.LastLogTerm < lastLog.Term {
+		reply.VoteGranted = false
+		return
+	} else if args.LastLogTerm == lastLog.Term && args.LastLogIndex < lastLog.Index {
+		reply.VoteGranted = false
+		return
+	}
+
+	if args.Term > rf.currentTerm {
+		//DPrintf("1. Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
+		rf.becomeFollower(args.Term, args.CandidateId)
+		reply.VoteGranted = true
+		return
+	}
+	if rf.state != Follower {
+		reply.VoteGranted = false
+		return
+	}
+
+	if rf.voteFor >= 0 && rf.voteFor != args.CandidateId {
+		reply.VoteGranted = false
+		return
+	}
+
+	rf.voteFor = args.CandidateId
+	reply.VoteGranted = true
+}
 
 func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
 	// Your code here (3A, 3B).
