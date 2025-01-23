@@ -191,7 +191,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 	}
 	rf.Log = append(rf.Log, entry)
-	//DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
+	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
 	go func() {
@@ -451,12 +451,13 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 				} else if reply.Term == rf.currentTerm {
 					// decrease nextIndex and retry
 					rf.nextIndex[peer] = reply.ConflictIndex
-					// TODO: optimize the nextIndex finding, maybe use binary search
+					DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
 					if reply.ConflictTerm != -1 {
 						firstLogIndex := rf.getFirstLog().Index
-						for index := args.PrevLogIndex - 1; index >= firstLogIndex; index-- {
+						for index := rf.getLastLog().Index; index >= firstLogIndex; index-- {
 							if rf.Log[index-firstLogIndex].Term == reply.ConflictTerm {
 								rf.nextIndex[peer] = index
+								DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
 								break
 							}
 						}
