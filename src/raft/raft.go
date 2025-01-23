@@ -450,17 +450,34 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 					rf.becomeFollower(reply.Term, -1)
 				} else if reply.Term == rf.currentTerm {
 					// decrease nextIndex and retry
-					rf.nextIndex[peer] = reply.ConflictIndex
-					DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
-					if reply.ConflictTerm != -1 {
-						firstLogIndex := rf.getFirstLog().Index
-						for index := rf.getLastLog().Index; index >= firstLogIndex; index-- {
-							if rf.Log[index-firstLogIndex].Term == reply.ConflictTerm {
-								rf.nextIndex[peer] = index
-								DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
-								break
-							}
-						}
+					// rf.nextIndex[peer] = reply.ConflictIndex
+					// DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
+					// if reply.ConflictTerm != -1 {
+					// 	firstLogIndex := rf.getFirstLog().Index
+					// 	for index := rf.getLastLog().Index; index >= firstLogIndex; index-- {
+					// 		if rf.Log[index-firstLogIndex].Term == reply.ConflictTerm {
+					// 			rf.nextIndex[peer] = index
+					// 			DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
+					// 			break
+					// 		}
+					// 	}
+					// }
+					if reply.ConflictTerm == -1 {
+						rf.nextIndex[peer] = reply.ConflictIndex
+						// } else if reply.ConflictTerm != -1 {
+						// 	if reply.ConflictIndex == 0 {
+						// 		firstIndex := rf.getFirstLog().Index
+						// 		for index := rf.getLastLog().Index; index >= firstIndex; index-- {
+						// 			if rf.Log[index-firstIndex].Term == reply.ConflictTerm {
+						// 				rf.nextIndex[peer] = index + 1
+						// 				break
+						// 			}
+						// 		}
+						// 	} else {
+						// 		rf.nextIndex[peer] = reply.ConflictIndex
+						// 	}
+					} else {
+						rf.nextIndex[peer]--
 					}
 				}
 			} else {

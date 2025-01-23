@@ -11,4 +11,4 @@ mrtmp.*
 /main/mrsequential
 /main/mrworker
 mr-*
-*.log
+*/debug.log

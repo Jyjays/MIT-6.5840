@@ -135,7 +135,6 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
 		reply.Term, reply.Success = rf.currentTerm, false
 		lastLogIndex := rf.getLastLog().Index
-		// find the first index of the conflicting term
 		if lastLogIndex < args.PrevLogIndex {
 			// the last log index is smaller than the prevLogIndex, then the conflict index is the last log index
 			reply.ConflictIndex, reply.ConflictTerm = lastLogIndex+1, -1
@@ -204,12 +203,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 // 		rf.resetElectionTimer()
 // 	}
 // 	//DPrintf("<<AppendEntries:Node %d: Recive heartbeat, args.leaderCommit %d, rf.commitIndex %d\n", rf.me, args.LeaderCommit, rf.commitIndex)
-// 	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
-// 	//DPrintf("AppendEntries: Node %d commitIndex %d, newCommitIndex %d\n", rf.me, rf.commitIndex, newCommitIndex)
-// 	if newCommitIndex > rf.commitIndex {
-// 		rf.commitIndex = newCommitIndex
-// 		rf.applyCond.Signal()
-// 	}
+
 // 	//DPrintf("Node %d: end of AppendEntries", rf.me)
 // 	if args.Entries == nil || len(args.Entries) == 0 {
 // 		reply.Success = true
@@ -256,7 +250,13 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 
 // 	// 	DPrintf("Node %d receive AppendEntries for term %d, log %v\n", rf.me, args.Term, rf.Log)
 // 	// }
-// 	//DPrintf("Node %d: end of AppendEntries", rf.me)
+// 	//DPrintf("Node %d: end of AppendEntries", rf.me)\
+// 	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
+// 	//DPrintf("AppendEntries: Node %d commitIndex %d, newCommitIndex %d\n", rf.me, rf.commitIndex, newCommitIndex)
+// 	if newCommitIndex > rf.commitIndex {
+// 		rf.commitIndex = newCommitIndex
+// 		rf.applyCond.Signal()
+// 	}
 // 	reply.Success = true
 // 	return
 
