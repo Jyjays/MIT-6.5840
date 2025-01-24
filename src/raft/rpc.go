@@ -122,6 +122,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.persist()
 	}
 	rf.becomeFollower(args.Term, -1)
+	rf.persist()
 	rf.resetElectionTimer()
 
 	// Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm(§5.3)

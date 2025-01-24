@@ -20,14 +20,14 @@ package raft
 import (
 	//	"bytes"
 
-	"log"
-	"os"
+	"bytes"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	//	"6.5840/labgob"
+	"6.5840/labgob"
 	"6.5840/labrpc"
 )
 
@@ -123,12 +123,13 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) persist() {
 	// Your code here (3C).
 	// Example:
-	// w := new(bytes.Buffer)
-	// e := labgob.NewEncoder(w)
-	// e.Encode(rf.xxx)
-	// e.Encode(rf.yyy)
-	// raftstate := w.Bytes()
-	// rf.persister.Save(raftstate, nil)
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.voteFor)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.Log)
+	raftstate := w.Bytes()
+	rf.persister.Save(raftstate, nil)
 }
 
 // restore previously persisted state.
@@ -138,17 +139,16 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	// Your code here (3C).
 	// Example:
-	// r := bytes.NewBuffer(data)
-	// d := labgob.NewDecoder(r)
-	// var xxx
-	// var yyy
-	// if d.Decode(&xxx) != nil ||
-	//    d.Decode(&yyy) != nil {
-	//   error...
-	// } else {
-	//   rf.xxx = xxx
-	//   rf.yyy = yyy
-	// }
+	r := bytes.NewBuffer(data)
+	d := labgob.NewDecoder(r)
+	var voteFor int
+	var currentTerm int
+	var Log []LogEntry
+	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&Log) != nil {
+		DPrintf("{Node %v} fails to decode persisted state", rf.me)
+	}
+	rf.currentTerm, rf.voteFor, rf.Log = currentTerm, voteFor, Log
+	rf.lastApplied, rf.commitIndex = rf.getFirstLog().Index, rf.getFirstLog().Index
 }
 
 // the service says it has created a snapshot that has
@@ -191,6 +191,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Term:    term,
 	}
 	rf.Log = append(rf.Log, entry)
+	rf.persist()
 	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
@@ -308,13 +309,13 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed to open log file: %v", err)
-	}
-	defer logFile.Close()
-	// 设置日志输出到文件
-	log.SetOutput(logFile)
+	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	log.Fatalf("failed to open log file: %v", err)
+	// }
+	// defer logFile.Close()
+	// // 设置日志输出到文件
+	// log.SetOutput(logFile)
 	for rf.killed() == false {
 
 		select {
@@ -448,6 +449,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 			if !reply.Success {
 				if reply.Term > rf.currentTerm {
 					rf.becomeFollower(reply.Term, -1)
+					rf.persist()
 				} else if reply.Term == rf.currentTerm {
 					// decrease nextIndex and retry
 					// rf.nextIndex[peer] = reply.ConflictIndex
@@ -554,6 +556,7 @@ func (rf *Raft) StartElection() {
 
 	// rf.resetElectionTimer() // 重置选举超时时间
 	rf.becomeCandidate()
+	rf.persist()
 	//rf.persist()            // 持久化状态
 	rargs := rf.MakeRequestVoteArgs()
 	rf.mu.Unlock()
@@ -580,6 +583,7 @@ func (rf *Raft) StartElection() {
 				if reply.Term > rf.currentTerm {
 					//DPrintf("5. Node %d: Become follower for term %d from state: %d\n", rf.me, reply.Term, rf.state)
 					rf.becomeFollower(reply.Term, -1)
+					rf.persist()
 					return
 				}
 
@@ -614,7 +618,7 @@ func (rf *Raft) StartElection() {
 			if rf.state == Candidate {
 				//DPrintf("6. Node %d: Election timed out in term %d\n", rf.me, rf.currentTerm)
 				rf.becomeFollower(rf.currentTerm, -1)
-				//rf.persist()
+				rf.persist()
 			}
 			rf.mu.Unlock()
 		case <-done:
@@ -623,9 +627,8 @@ func (rf *Raft) StartElection() {
 			if rf.state == Candidate && atomic.LoadInt32(&votes) <= int32(voteThreshold) {
 				//DPrintf("7. Node %d: Failed to become leader for term %d\n", rf.me, rf.currentTerm)
 				rf.becomeFollower(rf.currentTerm, -1)
+				rf.persist()
 				rf.resetElectionTimer()
-
-				//rf.persist()
 			}
 			rf.mu.Unlock()
 		}
