@@ -135,9 +135,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		if args.PrevLogIndex > rf.getLastLog().Index {
 			reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
 		} else {
-			reply.XTerm = rf.Log[args.PrevLogIndex-firstIndex].Term
+			reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
 			for i := args.PrevLogIndex; i >= firstIndex; i-- {
-				if rf.Log[i-firstIndex].Term != reply.XTerm {
+				if rf.log[i-firstIndex].Term != reply.XTerm {
 					reply.XIndex = i + 1
 					break
 				}
@@ -150,9 +150,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	firstLogIndex := rf.getFirstLog().Index
 	for index, entry := range args.Entries {
 		// find the junction of the existing log and the appended log.
-		if entry.Index-firstLogIndex >= len(rf.Log) || rf.Log[entry.Index-firstLogIndex].Term != entry.Term {
+		if entry.Index-firstLogIndex >= len(rf.log) || rf.log[entry.Index-firstLogIndex].Term != entry.Term {
 			//NOTE - slice is based on array, in the memory, we need to check whether the size of array is too large to store the data
-			rf.Log = shrinkEntries(append(rf.Log[:entry.Index-firstLogIndex], args.Entries[index:]...))
+			rf.log = shrinkEntries(append(rf.log[:entry.Index-firstLogIndex], args.Entries[index:]...))
 			rf.persist()
 			break
 		}

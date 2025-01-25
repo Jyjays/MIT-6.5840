@@ -89,7 +89,7 @@ type Raft struct {
 	// state a Raft server must maintain.
 	currentTerm int
 	voteFor     int
-	Log         []LogEntry
+	log         []LogEntry
 	// heartbeat: decide whether to start the election
 	//heartbeat   bool
 	commitIndex int
@@ -114,7 +114,14 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.RUnlock()
 	return rf.currentTerm, rf.state == Leader
 }
-
+func (rf *Raft) encodeState() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(rf.currentTerm)
+	e.Encode(rf.voteFor)
+	e.Encode(rf.log)
+	return w.Bytes()
+}
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
@@ -122,16 +129,9 @@ func (rf *Raft) GetState() (int, bool) {
 // second argument to persister.Save().
 // after you've implemented snapshots, pass the current snapshot
 // (or nil if there's not yet a snapshot).
+
 func (rf *Raft) persist() {
-	// Your code here (3C).
-	// Example:
-	w := new(bytes.Buffer)
-	e := labgob.NewEncoder(w)
-	e.Encode(rf.voteFor)
-	e.Encode(rf.currentTerm)
-	e.Encode(rf.Log)
-	raftstate := w.Bytes()
-	rf.persister.Save(raftstate, nil)
+	rf.persister.Save(rf.encodeState(), nil)
 }
 
 // restore previously persisted state.
@@ -139,19 +139,17 @@ func (rf *Raft) readPersist(data []byte) {
 	if data == nil || len(data) < 1 { // bootstrap without any state?
 		return
 	}
-	// Your code here (3C).
-	// Example:
 	r := bytes.NewBuffer(data)
 	d := labgob.NewDecoder(r)
-	var voteFor int
-	var currentTerm int
-	var Log []LogEntry
-	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&Log) != nil {
+	var currentTerm, voteFor int
+	var log []LogEntry
+	if d.Decode(&currentTerm) != nil || d.Decode(&voteFor) != nil || d.Decode(&log) != nil {
 		DPrintf("{Node %v} fails to decode persisted state", rf.me)
 	}
-	rf.currentTerm, rf.voteFor, rf.Log = currentTerm, voteFor, Log
-
+	rf.currentTerm, rf.voteFor, rf.log = currentTerm, voteFor, log
+	rf.lastApplied, rf.commitIndex = rf.getFirstLog().Index, rf.getFirstLog().Index
 }
+
 
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
@@ -192,9 +190,9 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 		Index:   index,
 		Term:    term,
 	}
-	rf.Log = append(rf.Log, entry)
+	rf.log = append(rf.log, entry)
 	rf.persist()
-	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.Log, index, term)
+	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
 	go func() {
@@ -220,7 +218,7 @@ func (rf *Raft) applier() {
 		// apply log entries to state machine
 		firstLogIndex, commitIndex, lastApplied := rf.getFirstLog().Index, rf.commitIndex, rf.lastApplied
 		entries := make([]LogEntry, commitIndex-lastApplied)
-		copy(entries, rf.Log[lastApplied-firstLogIndex+1:commitIndex-firstLogIndex+1])
+		copy(entries, rf.log[lastApplied-firstLogIndex+1:commitIndex-firstLogIndex+1])
 		rf.mu.Unlock()
 		//DPrintf("applier:Node %d: commitIndex %d lastApplied %d\n", rf.me, rf.commitIndex, rf.lastApplied)
 		// send the apply message to applyCh for service/State Machine Replica
@@ -278,7 +276,7 @@ func (rf *Raft) checkNeedCommit() bool {
 	//DPrintf("Node %d: commitIndex %d, rf.commitIndes %d\n", rf.me, commitIndex, rf.commitIndex)
 	if commitIndex > rf.commitIndex {
 		// check the term of the log entry
-		if rf.Log[commitIndex].Term == rf.currentTerm {
+		if rf.log[commitIndex].Term == rf.currentTerm {
 			//DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
 			rf.commitIndex = commitIndex
 			DPrintf("Leader's commitIndex %d\n", rf.commitIndex)
@@ -389,7 +387,7 @@ func (rf *Raft) Init() {
 	rf.commitIndex = 0
 	rf.lastApplied = 0
 	rf.state = Follower
-	rf.Log = make([]LogEntry, 1)
+	rf.log = make([]LogEntry, 1)
 	rf.nextIndex = make([]int, len(rf.peers))
 	rf.matchIndex = make([]int, len(rf.peers))
 	rf.electionTimer = time.NewTimer(RandomElectionTimeout())

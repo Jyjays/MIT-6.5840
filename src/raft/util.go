@@ -8,7 +8,7 @@ import (
 )
 
 // Debugging
-const Debug = false
+const Debug = true
 
 func currentTime() string {
 	return time.Now().Format("2025-01-19 15:37:05")
@@ -91,7 +91,7 @@ func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
 }
 
 func (rf *Raft) isMatched(index, term int) bool {
-	return index <= rf.getLastLog().Index && term == rf.Log[index-rf.getFirstLog().Index].Term
+	return index <= rf.getLastLog().Index && term == rf.log[index-rf.getFirstLog().Index].Term
 }
 
 func (rf *Raft) isUpToDate(index, term int) bool {
@@ -171,30 +171,30 @@ func (rf *Raft) resetElectionTimer() {
 // }
 
 func (rf *Raft) getLastLog() LogEntry {
-	return rf.Log[len(rf.Log)-1]
+	return rf.log[len(rf.log)-1]
 }
 
 func (rf *Raft) getFirstLog() LogEntry {
-	return rf.Log[0]
+	return rf.log[0]
 }
 
 func (rf *Raft) getPrevEntry(peer int) LogEntry {
-	if len(rf.Log) == 0 || rf.nextIndex[peer] == 0 {
+	if len(rf.log) == 0 || rf.nextIndex[peer] == 0 {
 		return LogEntry{}
 	}
-	return rf.Log[rf.nextIndex[peer]-1]
+	return rf.log[rf.nextIndex[peer]-1]
 }
 
 // TODO - add a parameter to specify the heartbeat and appendEntries
 func (rf *Raft) genAppendEntriesArgs(prevLogIndex int) *AppendEntriesArgs {
 	firstLogIndex := rf.getFirstLog().Index
-	entries := make([]LogEntry, len(rf.Log[prevLogIndex-firstLogIndex+1:]))
-	copy(entries, rf.Log[prevLogIndex-firstLogIndex+1:])
+	entries := make([]LogEntry, len(rf.log[prevLogIndex-firstLogIndex+1:]))
+	copy(entries, rf.log[prevLogIndex-firstLogIndex+1:])
 	args := &AppendEntriesArgs{
 		Term:         rf.currentTerm,
 		LeaderId:     rf.me,
 		PrevLogIndex: prevLogIndex,
-		PrevLogTerm:  rf.Log[prevLogIndex-firstLogIndex].Term,
+		PrevLogTerm:  rf.log[prevLogIndex-firstLogIndex].Term,
 		LeaderCommit: rf.commitIndex,
 		Entries:      entries,
 	}
@@ -213,8 +213,8 @@ func shrinkEntries(entries []LogEntry) []LogEntry {
 
 func (rf *Raft) findLastLogByTerm(term int) int {
 	firstLogIndex := rf.getFirstLog().Index
-	for i := len(rf.Log) - 1; i >= 0; i-- {
-		if rf.Log[i].Term == term {
+	for i := len(rf.log) - 1; i >= 0; i-- {
+		if rf.log[i].Term == term {
 			return i + firstLogIndex
 		}
 	}
