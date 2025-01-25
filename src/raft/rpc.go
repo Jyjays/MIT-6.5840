@@ -28,10 +28,11 @@ type AppendEntriesArgs struct {
 }
 
 type AppendEntriesReply struct {
-	Term          int
-	ConflictIndex int
-	ConflictTerm  int
-	Success       bool
+	Term    int
+	XTerm   int
+	XIndex  int
+	XLen    int
+	Success bool
 }
 
 func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
@@ -125,29 +126,24 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.persist()
 	rf.resetElectionTimer()
 
-	// Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm(§5.3)
-	if args.PrevLogIndex < rf.getFirstLog().Index {
-		reply.Term, reply.Success = rf.currentTerm, false
-		return
-	}
-
 	// check the log is matched, if not, return the conflict index and term
 	// if an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it(§5.3)
 	if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
 		reply.Term, reply.Success = rf.currentTerm, false
-		lastLogIndex := rf.getLastLog().Index
-		if lastLogIndex < args.PrevLogIndex {
-			// the last log index is smaller than the prevLogIndex, then the conflict index is the last log index
-			reply.ConflictIndex, reply.ConflictTerm = lastLogIndex+1, -1
+		firstIndex := rf.getFirstLog().Index
+		lastIndex := rf.getLastLog().Index
+		if args.PrevLogIndex > rf.getLastLog().Index {
+			reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
 		} else {
-			firstLogIndex := rf.getFirstLog().Index
-			// find the first index of the conflicting term
-			index := args.PrevLogIndex
-			for index >= firstLogIndex && rf.Log[index-firstLogIndex].Term == args.PrevLogTerm {
-				index--
+			reply.XTerm = rf.Log[args.PrevLogIndex-firstIndex].Term
+			for i := args.PrevLogIndex; i >= firstIndex; i-- {
+				if rf.Log[i-firstIndex].Term != reply.XTerm {
+					reply.XIndex = i + 1
+					break
+				}
 			}
-			reply.ConflictIndex, reply.ConflictTerm = index+1, args.PrevLogTerm
 		}
+
 		return
 	}
 	// append any new entries not already in the log

@@ -21,6 +21,8 @@ import (
 	//	"bytes"
 
 	"bytes"
+	"log"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -148,7 +150,7 @@ func (rf *Raft) readPersist(data []byte) {
 		DPrintf("{Node %v} fails to decode persisted state", rf.me)
 	}
 	rf.currentTerm, rf.voteFor, rf.Log = currentTerm, voteFor, Log
-	rf.lastApplied, rf.commitIndex = rf.getFirstLog().Index, rf.getFirstLog().Index
+
 }
 
 // the service says it has created a snapshot that has
@@ -309,20 +311,19 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	log.Fatalf("failed to open log file: %v", err)
-	// }
-	// defer logFile.Close()
-	// // 设置日志输出到文件
-	// log.SetOutput(logFile)
+	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
+	}
+	defer logFile.Close()
+	// 设置日志输出到文件
+	log.SetOutput(logFile)
 	for rf.killed() == false {
 
 		select {
 		case <-rf.electionTimer.C:
 			// rf.ChangeState(Candidate)
 			// rf.currentTerm += 1
-			rf.persist()
 			// start election
 			rf.StartElection()
 		case <-rf.heartbeatTimer.C:
@@ -336,43 +337,6 @@ func (rf *Raft) ticker() {
 		}
 	}
 }
-
-// func (rf *Raft) ticker() {
-// 	//SECTION - enable log file
-// 	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-// 	if err != nil {
-// 		log.Fatalf("failed to open log file: %v", err)
-// 	}
-// 	defer logFile.Close()
-// 	// 设置日志输出到文件
-// 	log.SetOutput(logFile)
-// 	//!SECTION
-// 	//FIXME - Error: if start election is called before the ticker, then the ticker will not work
-// 	// this means every raft will start election at the same time
-// 	for rf.killed() == false {
-
-// 		// Your code here (3A)
-// 		// Check if a leader election should be started.
-
-// 		// pause for a random amount of time between 50 and 350
-// 		// milliseconds.
-// 		ms := ElectionTimeout + (rand.Int63() % 300)
-// 		time.Sleep(time.Duration(ms) * time.Millisecond)
-
-// 		//REVIEW - start election
-// 		// Start a new term
-// 		rf.mu.Lock()
-// 		flag := rf.state == Follower && rf.checkElectionTimeout()
-// 		rf.mu.Unlock()
-// 		if flag {
-// 			//NOTE - debug in ticker
-// 			//DPrintf("Node %d: Start election for term %d\n", rf.me, rf.currentTerm+1)
-// 			go rf.StartElection()
-// 		}
-
-// 	}
-
-// }
 
 // the service or tester wants to create a Raft server. the ports
 // of all the Raft servers (including this one) are in peers[]. this
@@ -451,35 +415,21 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 					rf.becomeFollower(reply.Term, -1)
 					rf.persist()
 				} else if reply.Term == rf.currentTerm {
-					// decrease nextIndex and retry
-					// rf.nextIndex[peer] = reply.ConflictIndex
-					// DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
-					// if reply.ConflictTerm != -1 {
-					// 	firstLogIndex := rf.getFirstLog().Index
-					// 	for index := rf.getLastLog().Index; index >= firstLogIndex; index-- {
-					// 		if rf.Log[index-firstLogIndex].Term == reply.ConflictTerm {
-					// 			rf.nextIndex[peer] = index
-					// 			DPrintf("Node %d: Decrease nextIndex for peer %d to %d\n", rf.me, peer, rf.nextIndex[peer])
-					// 			break
-					// 		}
-					// 	}
-					// }
-					if reply.ConflictTerm == -1 {
-						rf.nextIndex[peer] = reply.ConflictIndex
-						// } else if reply.ConflictTerm != -1 {
-						// 	if reply.ConflictIndex == 0 {
-						// 		firstIndex := rf.getFirstLog().Index
-						// 		for index := rf.getLastLog().Index; index >= firstIndex; index-- {
-						// 			if rf.Log[index-firstIndex].Term == reply.ConflictTerm {
-						// 				rf.nextIndex[peer] = index + 1
-						// 				break
-						// 			}
-						// 		}
-						// 	} else {
-						// 		rf.nextIndex[peer] = reply.ConflictIndex
-						// 	}
+
+					if reply.XTerm == -1 {
+						rf.nextIndex[peer] = reply.XLen
 					} else {
-						rf.nextIndex[peer]--
+						// xIndex为0则证明 follower当中没找到，即只有一个term的情况,需要leader进行定位
+						// follower : 4 4 4
+						// leader : 4 4 5 5 5
+						if reply.XIndex == 0 {
+							last := rf.findLastLogByTerm(reply.XTerm)
+							rf.nextIndex[peer] = last
+						} else {
+							// XIndex找到了则直接使用XIndex的即可
+							rf.nextIndex[peer] = reply.XIndex
+						}
+
 					}
 				}
 			} else {

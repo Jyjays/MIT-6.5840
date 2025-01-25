@@ -210,3 +210,13 @@ func shrinkEntries(entries []LogEntry) []LogEntry {
 	}
 	return entries
 }
+
+func (rf *Raft) findLastLogByTerm(term int) int {
+	firstLogIndex := rf.getFirstLog().Index
+	for i := len(rf.Log) - 1; i >= 0; i-- {
+		if rf.Log[i].Term == term {
+			return i + firstLogIndex
+		}
+	}
+	return -1
+}
