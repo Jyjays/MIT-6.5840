@@ -156,8 +156,17 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	// Your code here (3D).
-
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+	snapshotIndex := rf.getFirstLog().Index
+	if index <= snapshotIndex || index > rf.getLastLog().Index {
+		DPrintf("{Node %v} rejects replacing log with snapshotIndex %v as current snapshotIndex %v is larger in term %v", rf.me, index, snapshotIndex, rf.currentTerm)
+		return
+	}
+	// remove log entries up to index
+	rf.log = rf.log[index-snapshotIndex:]
+	rf.log[0].Command = nil
+	rf.persister.Save(rf.encodeState(), snapshot)
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
