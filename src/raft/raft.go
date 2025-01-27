@@ -156,17 +156,17 @@ func (rf *Raft) readPersist(data []byte) {
 // service no longer needs the log through (and including)
 // that index. Raft should now trim its log as much as possible.
 func (rf *Raft) Snapshot(index int, snapshot []byte) {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	snapshotIndex := rf.getFirstLog().Index
-	if index <= snapshotIndex || index > rf.getLastLog().Index {
-		DPrintf("{Node %v} rejects replacing log with snapshotIndex %v as current snapshotIndex %v is larger in term %v", rf.me, index, snapshotIndex, rf.currentTerm)
-		return
-	}
-	// remove log entries up to index
-	rf.log = rf.log[index-snapshotIndex:]
-	rf.log[0].Command = nil
-	rf.persister.Save(rf.encodeState(), snapshot)
+	// rf.mu.Lock()
+	// defer rf.mu.Unlock()
+	// snapshotIndex := rf.getFirstLog().Index
+	// if index <= snapshotIndex || index > rf.getLastLog().Index {
+	// 	DPrintf("{Node %v} rejects replacing log with snapshotIndex %v as current snapshotIndex %v is larger in term %v", rf.me, index, snapshotIndex, rf.currentTerm)
+	// 	return
+	// }
+	// // remove log entries up to index
+	// rf.log = rf.log[index-snapshotIndex:]
+	// rf.log[0].Command = nil
+	// rf.persister.Save(rf.encodeState(), snapshot)
 }
 
 // the service using Raft (e.g. a k/v server) wants to start
@@ -279,13 +279,13 @@ func (rf *Raft) checkNeedCommit() bool {
 	copy(matchIndex, rf.matchIndex)
 	sort.Ints(matchIndex)
 	// find the index that is replicated by a majority of servers
-
+	firstIndex :=rf.getFirstLog().Index
 	commitIndex := matchIndex[length-length/2-1]
 	//DPrintf("Leader:Node %d: matchIndex %v, commitIndex %d\n", rf.me, matchIndex, commitIndex)
 	//DPrintf("Node %d: commitIndex %d, rf.commitIndes %d\n", rf.me, commitIndex, rf.commitIndex)
 	if commitIndex > rf.commitIndex {
 		// check the term of the log entry
-		if rf.log[commitIndex].Term == rf.currentTerm {
+		if rf.log[commitIndex-firstIndex].Term == rf.currentTerm {
 			//DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
 			rf.commitIndex = commitIndex
 			DPrintf("Leader's commitIndex %d\n", rf.commitIndex)
