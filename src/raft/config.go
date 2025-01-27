@@ -222,11 +222,12 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	}
 
 	for m := range applyCh {
-		DPrintf("server %v apply %v", i, m)
 		err_msg := ""
 		if m.SnapshotValid {
 			cfg.mu.Lock()
-			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+			if rf.CondInstallSnapshot(m.SnapshotTerm, m.SnapshotIndex, m.Snapshot) {
+				err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+			}
 			cfg.mu.Unlock()
 		} else if m.CommandValid {
 			if m.CommandIndex != cfg.lastApplied[i]+1 {
@@ -269,6 +270,63 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 		}
 	}
 }
+
+// func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
+// 	cfg.mu.Lock()
+// 	rf := cfg.rafts[i]
+// 	cfg.mu.Unlock()
+// 	if rf == nil {
+// 		return // ???
+// 	}
+
+// 	for m := range applyCh {
+// 		DPrintf("server %v apply %v", i, m)
+// 		err_msg := ""
+// 		if m.SnapshotValid {
+// 			cfg.mu.Lock()
+// 			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+// 			cfg.mu.Unlock()
+// 		} else if m.CommandValid {
+// 			if m.CommandIndex != cfg.lastApplied[i]+1 {
+// 				err_msg = fmt.Sprintf("server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
+// 			}
+
+// 			if err_msg == "" {
+// 				cfg.mu.Lock()
+// 				var prevok bool
+// 				err_msg, prevok = cfg.checkLogs(i, m)
+// 				cfg.mu.Unlock()
+// 				if m.CommandIndex > 1 && prevok == false {
+// 					err_msg = fmt.Sprintf("server %v apply out of order %v", i, m.CommandIndex)
+// 				}
+// 			}
+
+// 			cfg.mu.Lock()
+// 			cfg.lastApplied[i] = m.CommandIndex
+// 			cfg.mu.Unlock()
+
+// 			if (m.CommandIndex+1)%SnapShotInterval == 0 {
+// 				w := new(bytes.Buffer)
+// 				e := labgob.NewEncoder(w)
+// 				e.Encode(m.CommandIndex)
+// 				var xlog []interface{}
+// 				for j := 0; j <= m.CommandIndex; j++ {
+// 					xlog = append(xlog, cfg.logs[i][j])
+// 				}
+// 				e.Encode(xlog)
+// 				rf.Snapshot(m.CommandIndex, w.Bytes())
+// 			}
+// 		} else {
+// 			// Ignore other types of ApplyMsg.
+// 		}
+// 		if err_msg != "" {
+// 			log.Fatalf("apply error: %v", err_msg)
+// 			cfg.applyErr[i] = err_msg
+// 			// keep reading after error so that Raft doesn't block
+// 			// holding locks...
+// 		}
+// 	}
+// }
 
 // start or re-start a Raft.
 // if one already exists, "kill" it first.

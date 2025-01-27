@@ -61,14 +61,35 @@ func (rf *Raft) MakeRequestVoteArgs() RequestVoteArgs {
 	return args
 }
 
-func MakeAppendEntriesArgs(term int, leaderId int, prevLogIndex int, prevLogTerm int, entries []LogEntry, leaderCommit int) AppendEntriesArgs {
-	args := AppendEntriesArgs{}
-	args.Term = term
-	args.LeaderId = leaderId
-	args.PrevLogIndex = prevLogIndex
-	args.PrevLogTerm = prevLogTerm
-	args.Entries = entries
-	args.LeaderCommit = leaderCommit
+// TODO - add a parameter to specify the heartbeat and appendEntries
+func (rf *Raft) MakeAppendEntriesArgs(prevLogIndex int) *AppendEntriesArgs {
+	firstLogIndex := rf.getFirstLog().Index
+	if prevLogIndex < firstLogIndex {
+		DPrintf("[Server %d] prevLogIndex %d < firstLogIndex %d", rf.me, prevLogIndex, firstLogIndex)
+		return nil
+	}
+	entries := make([]LogEntry, len(rf.log[prevLogIndex-firstLogIndex+1:]))
+	copy(entries, rf.log[prevLogIndex-firstLogIndex+1:])
+	args := &AppendEntriesArgs{
+		Term:         rf.currentTerm,
+		LeaderId:     rf.me,
+		PrevLogIndex: prevLogIndex,
+		PrevLogTerm:  rf.log[prevLogIndex-firstLogIndex].Term,
+		LeaderCommit: rf.commitIndex,
+		Entries:      entries,
+	}
+	return args
+}
+
+func (rf *Raft) MakeInstallSnapshotArgs() *InstallSnapshotArgs {
+	firstlog := rf.getFirstLog()
+	args := &InstallSnapshotArgs{
+		Term:              rf.currentTerm,
+		LeaderId:          rf.me,
+		LastIncludedIndex: firstlog.Index,
+		LastIncludedTerm:  firstlog.Term,
+		Data:              rf.persister.ReadSnapshot(),
+	}
 	return args
 }
 
@@ -185,21 +206,6 @@ func (rf *Raft) getPrevEntry(peer int) LogEntry {
 	return rf.log[rf.nextIndex[peer]-1]
 }
 
-// TODO - add a parameter to specify the heartbeat and appendEntries
-func (rf *Raft) genAppendEntriesArgs(prevLogIndex int) *AppendEntriesArgs {
-	firstLogIndex := rf.getFirstLog().Index
-	entries := make([]LogEntry, len(rf.log[prevLogIndex-firstLogIndex+1:]))
-	copy(entries, rf.log[prevLogIndex-firstLogIndex+1:])
-	args := &AppendEntriesArgs{
-		Term:         rf.currentTerm,
-		LeaderId:     rf.me,
-		PrevLogIndex: prevLogIndex,
-		PrevLogTerm:  rf.log[prevLogIndex-firstLogIndex].Term,
-		LeaderCommit: rf.commitIndex,
-		Entries:      entries,
-	}
-	return args
-}
 
 func shrinkEntries(entries []LogEntry) []LogEntry {
 	const lenMultiple = 2
