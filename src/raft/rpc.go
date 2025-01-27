@@ -104,6 +104,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		lastIndex := rf.getLastLog().Index
 		if args.PrevLogIndex > rf.getLastLog().Index {
 			reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
+			// TODO - Add the situation that the leader's log is shorter than the follower's log
 		} else {
 			reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
 			for i := args.PrevLogIndex; i >= firstIndex; i-- {
@@ -155,6 +156,16 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	if args.LastIncludedIndex <= rf.commitIndex {
 		return
 	}
+
+	if args.LastIncludedIndex > rf.getLastLog().Index {
+		rf.log = make([]LogEntry, 1)
+	} else {
+		rf.log = shrinkEntries(rf.log[args.LastIncludedIndex-rf.getFirstLog().Index:])
+		rf.log[0].Command = nil
+	}
+	rf.log[0].Term, rf.log[0].Index = args.LastIncludedTerm, args.LastIncludedIndex
+	rf.commitIndex, rf.lastApplied = args.LastIncludedIndex, args.LastIncludedIndex
+	rf.persister.Save(rf.encodeState(), args.Data)
 
 	go func() {
 		rf.applyCh <- ApplyMsg{

@@ -152,6 +152,7 @@ func (rf *Raft) becomeLeader() {
 	for i := range rf.nextIndex {
 		rf.nextIndex[i] = rf.getLastLog().Index + 1
 	}
+	rf.matchIndex[rf.me] = rf.getLastLog().Index
 	rf.electionTimer.Stop()
 	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }

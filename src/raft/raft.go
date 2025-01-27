@@ -625,6 +625,7 @@ func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int,
 		rf.log = shrinkEntries(rf.log[lastIncludedIndex-rf.getFirstLog().Index:])
 		rf.log[0].Command = nil
 	}
+	//NOTE - Store the lastIncludedTerm and lastIncludedIndex in the rf.log[0]
 	rf.log[0].Term, rf.log[0].Index = lastIncludedTerm, lastIncludedIndex
 	rf.commitIndex, rf.lastApplied = lastIncludedIndex, lastIncludedIndex
 	rf.persister.Save(rf.encodeState(), snapshot)
