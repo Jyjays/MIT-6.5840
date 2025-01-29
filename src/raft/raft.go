@@ -18,8 +18,6 @@ package raft
 //
 
 import (
-	//	"bytes"
-
 	"bytes"
 	"log"
 	"os"
@@ -28,7 +26,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	//	"6.5840/labgob"
 	"6.5840/labgob"
 	"6.5840/labrpc"
 )
@@ -122,6 +119,7 @@ func (rf *Raft) encodeState() []byte {
 	e.Encode(rf.log)
 	return w.Bytes()
 }
+
 // save Raft's persistent state to stable storage,
 // where it can later be retrieved after a crash and restart.
 // see paper's Figure 2 for a description of what should be persistent.
@@ -129,7 +127,6 @@ func (rf *Raft) encodeState() []byte {
 // second argument to persister.Save().
 // after you've implemented snapshots, pass the current snapshot
 // (or nil if there's not yet a snapshot).
-
 func (rf *Raft) persist() {
 	rf.persister.Save(rf.encodeState(), nil)
 }
@@ -201,7 +198,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	}
 	rf.log = append(rf.log, entry)
 	rf.persist()
-	DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.log, index, term)
+	//DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
 	go func() {
@@ -239,7 +236,7 @@ func (rf *Raft) applier() {
 			}
 		}
 		rf.mu.Lock()
-		DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
+		//DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
 		// use commitIndex rather than rf.commitIndex because rf.commitIndex may change during the Unlock() and Lock()
 		rf.lastApplied = Max(rf.lastApplied, commitIndex)
 		rf.resetElectionTimer()
@@ -262,17 +259,21 @@ func (rf *Raft) replicator(peer int) {
 			rf.replicateCond[peer].Wait()
 		}
 		rf.SendHeartbeatOrLogs(peer)
+		if rf.checkNeedCommit() {
+			rf.applyCond.Signal()
+		}
 	}
+	
 }
 
+// According the matchIndex, check if there is a log entry that is replicated by a majority of servers
+// and has not been committed yet
+// if there is such a log entry, commit it
+// if there is no such a log entry, return false
+// if there is such a log entry, return true
+// [10, 11, 12, 12, 13]
+// After sort , we can find which index was replicated by majority of servers
 func (rf *Raft) checkNeedCommit() bool {
-	// According the matchIndex, check if there is a log entry that is replicated by a majority of servers
-	// and has not been committed yet
-	// if there is such a log entry, commit it
-	// if there is no such a log entry, return false
-	// if there is such a log entry, return true
-	// [10, 11, 12, 12, 13]
-	// After sort , we can find which index was replicated by majority of servers
 	// sort the matchIndex
 	length := len(rf.matchIndex)
 	matchIndex := make([]int, length)
@@ -323,15 +324,11 @@ func (rf *Raft) ticker() {
 		log.Fatalf("failed to open log file: %v", err)
 	}
 	defer logFile.Close()
-	// 设置日志输出到文件
 	log.SetOutput(logFile)
 	for rf.killed() == false {
 
 		select {
 		case <-rf.electionTimer.C:
-			// rf.ChangeState(Candidate)
-			// rf.currentTerm += 1
-			// start election
 			rf.StartElection()
 		case <-rf.heartbeatTimer.C:
 			rf.mu.Lock()
@@ -411,7 +408,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 	}
 	prevLogIndex := rf.nextIndex[peer] - 1
 	firstLogIndex := rf.getFirstLog().Index
-	DPrintf("prevLogIndex %d, firstLogIndex %d\n", prevLogIndex, firstLogIndex)
+	//DPrintf("prevLogIndex %d, firstLogIndex %d\n", prevLogIndex, firstLogIndex)
 	if prevLogIndex < firstLogIndex {
 		// send installsnapshot
 		args := rf.MakeInstallSnapshotArgs();
@@ -445,26 +442,19 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 					if reply.XTerm == -1 {
 						rf.nextIndex[peer] = reply.XLen
 					} else {
-						// xIndex为0则证明 follower当中没找到，即只有一个term的情况,需要leader进行定位
-						// follower : 4 4 4
-						// leader : 4 4 5 5 5
 						if reply.XIndex == 0 {
 							last := rf.findLastLogByTerm(reply.XTerm)
 							rf.nextIndex[peer] = last
 						} else {
-							// XIndex找到了则直接使用XIndex的即可
 							rf.nextIndex[peer] = reply.XIndex
 						}
 
 					}
 				}
 			} else {
+				//REVIEW - matchIndex应该是args.Entries的最后一个Index
 				rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
-				rf.nextIndex[peer] = rf.matchIndex[peer] + 1
-				// advance commitIndex if possible
-				if rf.checkNeedCommit() {
-					rf.applyCond.Signal()
-				}
+				rf.nextIndex[peer] = rf.matchIndex[peer] + 1		
 			}
 		}
 		rf.mu.Unlock()
@@ -480,60 +470,11 @@ func (rf *Raft) SendHeartbeats() {
 	}
 }
 
-// func (rf *Raft) SendHeartbeats() {
-// 	//DPrintf("Node %d: SendHeartbeats\n", rf.me)
-// 	//ticker := time.NewTicker(time.Duration(HeartbeatInterval) * time.Millisecond) // 心跳周期
-// 	rf.mu.RLock()
-// 	// 如果不再是 Leader，退出心跳循环
-
-// 	if rf.state != Leader {
-// 		//DPrintf("Node %d: Stop sending heartbeat for term %d\n", rf.me, rf.currentTerm)
-// 		rf.mu.RUnlock()
-// 		return
-// 	}
-// 	// 获取当前 Term 和其他状态
-
-// 	rf.mu.RUnlock()
-// 	// 向所有 Follower 发送心跳
-// 	for i := range rf.peers {
-// 		if i == rf.me {
-// 			continue
-// 		}
-// 		go func(server int) {
-// 			rf.mu.RLock()
-// 			args := rf.MakeHeartbeatArgs(server)
-
-// 			reply := AppendEntriesReply{}
-// 			if rf.state != Leader {
-// 				return
-// 			}
-// 			rf.mu.RUnlock()
-// 			//DPrintf("Heartbeat send: Node %d: Send heartbeat to Node %d for term %d\n", rf.me, server, rf.currentTerm)
-// 			if rf.sendAppendEntries(server, &args, &reply) {
-// 				rf.mu.Lock()
-// 				defer rf.mu.Unlock()
-// 				if reply.Term > rf.currentTerm {
-// 					//DPrintf("4.Node %d: Become follower for term %d from state: %d\n", rf.me, args.Term, rf.state)
-// 					rf.becomeFollower(reply.Term, -1)
-// 				}
-// 			}
-// 			//DPrintf("HeartBeat accept reply from Node:%d\n", server)
-// 		}(i)
-// 	}
-
-// }
-
 func (rf *Raft) StartElection() {
 	rf.mu.Lock()
-	DPrintf("Node %d: Start election for term %d\n", rf.me, rf.currentTerm+1)
-	// rf.state = Candidate
-	// rf.currentTerm += 1
-	// rf.voteFor = rf.me
-
-	// rf.resetElectionTimer() // 重置选举超时时间
+	//DPrintf("Node %d: Start election for term %d\n", rf.me, rf.currentTerm+1)
 	rf.becomeCandidate()
 	rf.persist()
-	//rf.persist()            // 持久化状态
 	rargs := rf.MakeRequestVoteArgs()
 	rf.mu.Unlock()
 
@@ -598,7 +539,6 @@ func (rf *Raft) StartElection() {
 			}
 			rf.mu.Unlock()
 		case <-done:
-			// 正常完成所有投票请求
 			rf.mu.Lock()
 			if rf.state == Candidate && atomic.LoadInt32(&votes) <= int32(voteThreshold) {
 				//DPrintf("7. Node %d: Failed to become leader for term %d\n", rf.me, rf.currentTerm)
@@ -609,27 +549,4 @@ func (rf *Raft) StartElection() {
 			rf.mu.Unlock()
 		}
 	}()
-}
-func (rf *Raft) CondInstallSnapshot(lastIncludedTerm int, lastIncludedIndex int, snapshot []byte) bool {
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	// outdated snapshot
-	if lastIncludedIndex <= rf.commitIndex {
-		DPrintf("{Node %v} rejects outdated snapshot with lastIncludeIndex %v as current commitIndex %v is larger in term %v", rf.me, lastIncludedIndex, rf.commitIndex, rf.currentTerm)
-		return false
-	}
-	// need dummy entry at index 0
-	if lastIncludedIndex > rf.getLastLog().Index {
-		rf.log = make([]LogEntry, 1)
-	} else {
-		rf.log = shrinkEntries(rf.log[lastIncludedIndex-rf.getFirstLog().Index:])
-		rf.log[0].Command = nil
-	}
-	//NOTE - Store the lastIncludedTerm and lastIncludedIndex in the rf.log[0]
-	rf.log[0].Term, rf.log[0].Index = lastIncludedTerm, lastIncludedIndex
-	rf.commitIndex, rf.lastApplied = lastIncludedIndex, lastIncludedIndex
-	rf.persister.Save(rf.encodeState(), snapshot)
-
-	DPrintf("{Node %v}'s state is {state %v,term %v,commitIndex %v,lastApplied %v,firstLog %v,lastLog %v} after accepting the snapshot which lastIncludedTerm is %v, lastIncludedIndex is %v", rf.me, rf.state, rf.currentTerm, rf.commitIndex, rf.lastApplied, rf.getFirstLog(), rf.getLastLog(), lastIncludedTerm, lastIncludedIndex)
-	return true
 }

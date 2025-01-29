@@ -79,7 +79,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// Your code here (3A, 3B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer DPrintf("{Node %v}'s state is {state %v, term %v}} after processing AppendEntries,  AppendEntriesArgs %v and AppendEntriesReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
+	defer DPrintf("Append: Node %v's log is %v\n", rf.me, rf.log)
 
 	// Reply false if term < currentTerm(§5.1)
 	if args.Term < rf.currentTerm {
@@ -132,7 +132,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry) (paper)
 	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
 	if newCommitIndex > rf.commitIndex {
-		DPrintf("{Node %v} advances commitIndex from %v to %v with leaderCommit %v in term %v", rf.me, rf.commitIndex, newCommitIndex, args.LeaderCommit, rf.currentTerm)
+		DPrintf("{Node %v} advances commitIndex from %v to %v with leaderCommit %v in term %v \n", rf.me, rf.commitIndex, newCommitIndex, args.LeaderCommit, rf.currentTerm)
 		rf.commitIndex = newCommitIndex
 		rf.applyCond.Signal()
 	}
@@ -142,7 +142,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer DPrintf("{Node %v}'s state is {state %v, term %v}} after processing InstallSnapshot,  InstallSnapshotArgs %v and InstallSnapshotReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
+	defer DPrintf("InstallSnapshot: {Node %v}'s state is {state %v, term %v}} after processing InstallSnapshot,  InstallSnapshotArgs %v and InstallSnapshotReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		return

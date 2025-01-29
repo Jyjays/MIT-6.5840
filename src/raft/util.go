@@ -1,10 +1,11 @@
 package raft
 
 import (
-	"log"
 	"math/rand"
 	"sync"
 	"time"
+	//"log"
+	"fmt"
 )
 
 // Debugging
@@ -16,8 +17,8 @@ func currentTime() string {
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
-		log.Printf(format, a...)
-		//fmt.Printf(format, a...)
+		//log.Printf(format, a...)
+		fmt.Printf(format, a...)
 	}
 }
 
