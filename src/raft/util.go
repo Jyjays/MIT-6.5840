@@ -4,12 +4,12 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	"log"
-	//"fmt"
+	//"log"
+	"fmt"
 )
 
 // Debugging
-const Debug = false
+const Debug = true
 
 func currentTime() string {
 	return time.Now().Format("2025-01-19 15:37:05")
@@ -17,8 +17,8 @@ func currentTime() string {
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
-		log.Printf(format, a...)
-		//fmt.Printf(format, a...)
+		//log.Printf(format, a...)
+		fmt.Printf(format, a...)
 	}
 }
 

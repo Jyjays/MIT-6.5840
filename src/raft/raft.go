@@ -19,8 +19,8 @@ package raft
 
 import (
 	"bytes"
-	"log"
-	"os"
+	// "log"
+	// "os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -72,6 +72,9 @@ type LogEntry struct {
 // 	HeartbeatInterval = 125
 // 	ElectionTimeout   = 1000
 // )
+
+const BackupQuick = false
+
 
 // A Go object implementing a single Raft peer.
 type Raft struct {
@@ -319,12 +322,12 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed to open log file: %v", err)
-	}
-	defer logFile.Close()
-	log.SetOutput(logFile)
+	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	log.Fatalf("failed to open log file: %v", err)
+	// }
+	// defer logFile.Close()
+	// log.SetOutput(logFile)
 	for rf.killed() == false {
 
 		select {
@@ -438,9 +441,10 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 					rf.becomeFollower(reply.Term, -1)
 					rf.persist()
 				} else if reply.Term == rf.currentTerm {
-					if reply.XTerm == -1 {
-						rf.nextIndex[peer] = Max(1, reply.XLen)  // 确保 `nextIndex` 至少是 1
-					} else {
+					if BackupQuick {
+						if reply.XTerm == -1 {
+							rf.nextIndex[peer] = Max(1, reply.XLen)  // 确保 `nextIndex` 至少是 1
+						} else {
 						// if reply.XIndex == 0 {
 						// 	flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
 						// 	if flag {
@@ -452,13 +456,16 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 						// } else {
 						// 	rf.nextIndex[peer] = Max(1, reply.XIndex)
 						// }
-						flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
-						if flag {
-							rf.nextIndex[peer] = last + 1
-						} else {
-							rf.nextIndex[peer] = Max(1, reply.XIndex)
-						}
+							flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
+							if flag {
+								rf.nextIndex[peer] = last + 1
+							} else {
+								rf.nextIndex[peer] = Max(1, reply.XIndex)
+							}
 
+						}
+					}else {
+						rf.nextIndex[peer] -= 1
 					}
 				}
 			} else {

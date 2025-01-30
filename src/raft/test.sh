@@ -1,0 +1,1 @@
+python3 dtest --iter 500 --workers 10 --timeout 130 --output out.log TestManyElections3A TestBackup3B TestFigure83C TestUnreliableChurn3C TestSnapshotInstallUnreliable3D TestSnapshotInstallUnCrash3D TestSnapshotAllCrash3D TestSnapshotInit3D

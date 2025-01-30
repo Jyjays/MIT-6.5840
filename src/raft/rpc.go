@@ -99,20 +99,24 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// check the log is matched, if not, return the conflict index and term
 	// if an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it(§5.3)
 	if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
-		reply.Term, reply.Success = rf.currentTerm, false
-		firstIndex := rf.getFirstLog().Index
-		lastIndex := rf.getLastLog().Index
-		if args.PrevLogIndex > rf.getLastLog().Index {
-			reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
-			// TODO - Add the situation that the leader's log is shorter than the follower's log
-		} else {
-			reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
-			for i := args.PrevLogIndex; i >= firstIndex; i-- {
-				if rf.log[i-firstIndex].Term != reply.XTerm {
-					reply.XIndex = i + 1
-					break
+		if BackupQuick {
+			reply.Term, reply.Success = rf.currentTerm, false
+			firstIndex := rf.getFirstLog().Index
+			lastIndex := rf.getLastLog().Index
+			if args.PrevLogIndex > rf.getLastLog().Index {
+				reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
+				// TODO - Add the situation that the leader's log is shorter than the follower's log
+			} else {
+				reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
+				for i := args.PrevLogIndex; i >= firstIndex; i-- {
+					if rf.log[i-firstIndex].Term != reply.XTerm {
+						reply.XIndex = i + 1
+						break
+					}
 				}
-			}
+			}	
+		} else {
+			reply.Term, reply.Success = rf.currentTerm, false
 		}
 
 		return
