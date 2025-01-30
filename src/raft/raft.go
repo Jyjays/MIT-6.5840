@@ -252,19 +252,22 @@ func (rf *Raft) needReplicating(peer int) bool {
 }
 
 func (rf *Raft) replicator(peer int) {
-	rf.replicateCond[peer].L.Lock()
-	defer rf.replicateCond[peer].L.Unlock()
-	for rf.killed() == false {
-		for rf.needReplicating(peer) == false {
-			rf.replicateCond[peer].Wait()
-		}
-		rf.SendHeartbeatOrLogs(peer)
-		if rf.checkNeedCommit() {
-			rf.applyCond.Signal()
-		}
-	}
-	
+    rf.replicateCond[peer].L.Lock()
+    defer rf.replicateCond[peer].L.Unlock()
+    for rf.killed() == false {
+        for rf.needReplicating(peer) == false {
+            rf.replicateCond[peer].Wait()
+        }
+        rf.SendHeartbeatOrLogs(peer)
+        
+        rf.mu.Lock()  
+        if rf.checkNeedCommit() {
+            rf.applyCond.Signal()
+        }
+        rf.mu.Unlock()
+    }
 }
+
 
 // According the matchIndex, check if there is a log entry that is replicated by a majority of servers
 // and has not been committed yet
@@ -274,30 +277,27 @@ func (rf *Raft) replicator(peer int) {
 // [10, 11, 12, 12, 13]
 // After sort , we can find which index was replicated by majority of servers
 func (rf *Raft) checkNeedCommit() bool {
-	// sort the matchIndex
-	length := len(rf.matchIndex)
-	matchIndex := make([]int, length)
-	copy(matchIndex, rf.matchIndex)
-	sort.Ints(matchIndex)
-	// find the index that is replicated by a majority of servers
-	firstIndex :=rf.getFirstLog().Index
-	commitIndex := matchIndex[length-length/2-1]
-	//DPrintf("Leader:Node %d: matchIndex %v, commitIndex %d\n", rf.me, matchIndex, commitIndex)
-	//DPrintf("Node %d: commitIndex %d, rf.commitIndes %d\n", rf.me, commitIndex, rf.commitIndex)
-	if commitIndex > rf.commitIndex {
-		// check the term of the log entry
-		if rf.log[commitIndex-firstIndex].Term == rf.currentTerm {
-			//DPrintf("Node %d commitIndex %d\n", rf.me, commitIndex)
-			rf.commitIndex = commitIndex
-			DPrintf("Leader's commitIndex %d\n", rf.commitIndex)
-			return true
-		}
-	} else {
-		return false
-	}
-	return false
+    length := len(rf.matchIndex)
+    if length == 0 {
+        return false
+    }
+    matchIndex := make([]int, length)
+    copy(matchIndex, rf.matchIndex)
+    sort.Ints(matchIndex)
 
+    // 确保有多数派
+    quorumIndex := matchIndex[length-length/2-1]
+    firstIndex := rf.getFirstLog().Index
+
+	// NOTE - Figure 8 in the paper
+    if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
+        rf.commitIndex = quorumIndex
+        DPrintf("Leader's commitIndex updated to %d\n", rf.commitIndex)
+        return true
+    }
+    return false
 }
+
 
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to
@@ -438,25 +438,35 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 					rf.becomeFollower(reply.Term, -1)
 					rf.persist()
 				} else if reply.Term == rf.currentTerm {
-
 					if reply.XTerm == -1 {
-						rf.nextIndex[peer] = reply.XLen
+						rf.nextIndex[peer] = Max(1, reply.XLen)  // 确保 `nextIndex` 至少是 1
 					} else {
-						if reply.XIndex == 0 {
-							last := rf.findLastLogByTerm(reply.XTerm)
-							rf.nextIndex[peer] = last
+						// if reply.XIndex == 0 {
+						// 	flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
+						// 	if flag {
+						// 		rf.nextIndex[peer] = last + 1
+						// 	} else {
+						// 		rf.nextIndex[peer] = 1
+						// 	}
+
+						// } else {
+						// 	rf.nextIndex[peer] = Max(1, reply.XIndex)
+						// }
+						flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
+						if flag {
+							rf.nextIndex[peer] = last + 1
 						} else {
-							rf.nextIndex[peer] = reply.XIndex
+							rf.nextIndex[peer] = Max(1, reply.XIndex)
 						}
 
 					}
 				}
 			} else {
-				//REVIEW - matchIndex应该是args.Entries的最后一个Index
 				rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
-				rf.nextIndex[peer] = rf.matchIndex[peer] + 1		
+				rf.nextIndex[peer] = rf.matchIndex[peer] + 1
 			}
 		}
+		
 		rf.mu.Unlock()
 	}
 }

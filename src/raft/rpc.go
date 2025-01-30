@@ -79,7 +79,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// Your code here (3A, 3B).
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer DPrintf("Append: Node %v's log is %v\n", rf.me, rf.log)
+	//defer DPrintf("Append: Node %v's log is %v\n", rf.me, rf.log)
 
 	// Reply false if term < currentTerm(§5.1)
 	if args.Term < rf.currentTerm {
@@ -132,7 +132,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	// If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry) (paper)
 	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
 	if newCommitIndex > rf.commitIndex {
-		DPrintf("{Node %v} advances commitIndex from %v to %v with leaderCommit %v in term %v \n", rf.me, rf.commitIndex, newCommitIndex, args.LeaderCommit, rf.currentTerm)
+		DPrintf("{Node %v} commitIndex from %v to %v with leaderCommit %v in term %v \n", rf.me, rf.commitIndex, newCommitIndex, args.LeaderCommit, rf.currentTerm)
 		rf.commitIndex = newCommitIndex
 		rf.applyCond.Signal()
 	}

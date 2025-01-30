@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	//"log"
-	"fmt"
+	"log"
+	//"fmt"
 )
 
 // Debugging
@@ -17,8 +17,8 @@ func currentTime() string {
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
-		//log.Printf(format, a...)
-		fmt.Printf(format, a...)
+		log.Printf(format, a...)
+		//fmt.Printf(format, a...)
 	}
 }
 
@@ -219,12 +219,15 @@ func shrinkEntries(entries []LogEntry) []LogEntry {
 	return entries
 }
 
-func (rf *Raft) findLastLogByTerm(term int) int {
+func (rf *Raft) findLastLogIndexByTerm(term int) (bool ,int) {
+	// 如果找到了，返回true和index
+	// 如果没找到，返回false和-1
+
 	firstLogIndex := rf.getFirstLog().Index
 	for i := len(rf.log) - 1; i >= 0; i-- {
 		if rf.log[i].Term == term {
-			return i + firstLogIndex
+			return true, i + firstLogIndex
 		}
 	}
-	return -1
+	return false, -1
 }
