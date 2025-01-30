@@ -60,7 +60,8 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	}
 
 	if args.Term > rf.currentTerm {
-		rf.becomeFollower(args.Term, args.CandidateId)
+		rf.becomeFollower(args.Term)
+		rf.voteFor = args.CandidateId
 		rf.persist()
 	}
 
@@ -92,7 +93,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.currentTerm, rf.voteFor = args.Term, -1
 		rf.persist()
 	}
-	rf.becomeFollower(args.Term, -1)
+	rf.becomeFollower(args.Term)
 	rf.persist()
 	rf.resetElectionTimer()
 
@@ -152,7 +153,7 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 		return
 	}
 	if args.Term > rf.currentTerm {
-		rf.becomeFollower(args.Term, -1)
+		rf.becomeFollower(args.Term)
 		rf.persist()
 	}
 	rf.resetElectionTimer()

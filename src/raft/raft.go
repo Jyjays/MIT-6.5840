@@ -335,7 +335,7 @@ func (rf *Raft) ticker() {
 			rf.StartElection()
 		case <-rf.heartbeatTimer.C:
 			rf.mu.Lock()
-			if rf.state == Leader {
+			if rf.state != Follower {
 				// should send heartbeat
 				rf.SendHeartbeats()
 				rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
@@ -421,7 +421,8 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
 			if reply.Term > rf.currentTerm {
-				rf.becomeFollower(reply.Term, -1)
+				rf.becomeFollower(reply.Term)
+				rf.voteFor = -1
 				rf.persist()
 				return
 			}
@@ -438,7 +439,8 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 		if args.Term == rf.currentTerm && rf.state == Leader {
 			if !reply.Success {
 				if reply.Term > rf.currentTerm {
-					rf.becomeFollower(reply.Term, -1)
+					rf.becomeFollower(reply.Term)
+					rf.voteFor = -1
 					rf.persist()
 				} else if reply.Term == rf.currentTerm {
 					if BackupQuick {
@@ -516,19 +518,27 @@ func (rf *Raft) StartElection() {
 				// 更新 term，如果发现更高的 term
 				if reply.Term > rf.currentTerm {
 					//DPrintf("5. Node %d: Become follower for term %d from state: %d\n", rf.me, reply.Term, rf.state)
-					rf.becomeFollower(reply.Term, -1)
+					rf.becomeFollower(reply.Term)
+					rf.voteFor = -1
 					rf.persist()
 					return
 				}
 
+				if rf.state != Candidate || rf.currentTerm != rargs.Term {
+					return
+				}
+
 				// 检查投票结果
-				if reply.VoteGranted && rf.state == Candidate {
+				if reply.VoteGranted {
 					atomic.AddInt32(&votes, 1)
 					if atomic.LoadInt32(&votes) > int32(voteThreshold) {
-						rf.becomeLeader()
-						rf.persist()
-						rf.SendHeartbeats()
-						DPrintf("Node %d: Became leader for term %d\n", rf.me, rf.currentTerm)
+						// 再次检查状态和任期
+						if rf.state == Candidate && rf.currentTerm == rargs.Term {
+							rf.becomeLeader()
+							rf.persist()
+							rf.SendHeartbeats()
+							DPrintf("Node %d: Became leader for term %d\n", rf.me, rf.currentTerm)
+						}
 					}
 				}
 			}
@@ -551,7 +561,7 @@ func (rf *Raft) StartElection() {
 			rf.mu.Lock()
 			if rf.state == Candidate {
 				//DPrintf("6. Node %d: Election timed out in term %d\n", rf.me, rf.currentTerm)
-				rf.becomeFollower(rf.currentTerm, -1)
+				rf.becomeFollower(rf.currentTerm)
 				rf.persist()
 			}
 			rf.mu.Unlock()
@@ -559,7 +569,7 @@ func (rf *Raft) StartElection() {
 			rf.mu.Lock()
 			if rf.state == Candidate && atomic.LoadInt32(&votes) <= int32(voteThreshold) {
 				//DPrintf("7. Node %d: Failed to become leader for term %d\n", rf.me, rf.currentTerm)
-				rf.becomeFollower(rf.currentTerm, -1)
+				rf.becomeFollower(rf.currentTerm)
 				rf.persist()
 				rf.resetElectionTimer()
 			}

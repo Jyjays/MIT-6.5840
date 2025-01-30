@@ -509,7 +509,7 @@ func TestBackup3B(t *testing.T) {
 	// put leader and one follower in a partition
 	leader1 := cfg.checkOneLeader()
 
-	DPrintf("leader: %v, disconnect: %v %v %v", leader1, (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
+	DPrintf("leader: %v, disconnect: %v %v %v\n", leader1, (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 	cfg.disconnect((leader1 + 2) % servers)
 	cfg.disconnect((leader1 + 3) % servers)
 	cfg.disconnect((leader1 + 4) % servers)
@@ -521,12 +521,12 @@ func TestBackup3B(t *testing.T) {
 
 	time.Sleep(RaftElectionTimeout / 2)
 
-	DPrintf("disconnect: %v %v", (leader1)%servers, (leader1+1)%servers)
+	DPrintf("disconnect: %v %v \n", (leader1)%servers, (leader1+1)%servers)
 
 	cfg.disconnect((leader1 + 0) % servers)
 	cfg.disconnect((leader1 + 1) % servers)
 
-	DPrintf("connect: %v %v %v", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
+	DPrintf("connect: %v %v %v\n", (leader1+2)%servers, (leader1+3)%servers, (leader1+4)%servers)
 
 	// allow other partition to recover
 	cfg.connect((leader1 + 2) % servers)
@@ -940,7 +940,7 @@ func TestFigure8Unreliable3C(t *testing.T) {
 
 		if leader != -1 && (rand.Int()%1000) < int(RaftElectionTimeout/time.Millisecond)/2 {
 			cfg.disconnect(leader)
-			DPrintf("disconnect %v", leader)
+			DPrintf("disconnect %v\n", leader)
 			nup -= 1
 		}
 
@@ -1140,7 +1140,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		}
 
 		if disconnect {
-			DPrintf("disconnect: victime: %v", victim)
+			DPrintf("disconnect: victime: %v\n", victim)
 			cfg.disconnect(victim)
 			cfg.one(rand.Int(), servers-1, true)
 		}
@@ -1172,7 +1172,7 @@ func snapcommon(t *testing.T, name string, disconnect bool, reliable bool, crash
 		if disconnect {
 			// reconnect a follower, who maybe behind and
 			// needs to rceive a snapshot to catch up.
-			DPrintf("connect: victime: %v", victim)
+			DPrintf("connect: victime: %v\n", victim)
 			cfg.connect(victim)
 			cfg.one(rand.Int(), servers, true)
 			leader1 = cfg.checkOneLeader()

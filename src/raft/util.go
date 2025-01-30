@@ -121,24 +121,25 @@ func (rf *Raft) isUpToDate(index, term int) bool {
 	return term > lastLog.Term || (term == lastLog.Term && index >= lastLog.Index)
 }
 
-func (rf *Raft) becomeFollower(term int, candidateID int) {
+func (rf *Raft) becomeFollower(term int) {
 	// rf.mu.Lock()
 	// defer rf.mu.Unlock()
 	//DPrintf("[Server %d become follower, term %d, vote for %d", rf.me, term, candidateID)
 	rf.state = Follower
 	rf.currentTerm = term
-	rf.voteFor = candidateID
+	// rf.voteFor = candidateID
 	rf.heartbeatTimer.Stop()
 	rf.resetElectionTimer()
 }
 
 func (rf *Raft) becomeCandidate() {
-	// rf.mu.Lock()
-	// defer rf.mu.Unlock()
-	//DPrintf("[Server %d become candidate, term %d", rf.me, rf.currentTerm+1)
-	rf.state = Candidate
-	rf.currentTerm++
-	rf.voteFor = rf.me
+	if rf.state == Leader {
+		DPrintf("[Server %d] is already leader, term %d\n", rf.me, rf.currentTerm)
+        return
+    }
+    rf.state = Candidate
+    rf.currentTerm += 1
+    rf.voteFor = rf.me  // 必须为自己投票
 	rf.electionTimer.Stop() // stop election
 	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }
