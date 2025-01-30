@@ -76,78 +76,80 @@ func (rf *Raft) RequestVote(args *RequestVoteArgs, reply *RequestVoteReply) {
 	reply.Term, reply.VoteGranted = rf.currentTerm, true
 }
 
-func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) {
-	// Your code here (3A, 3B).
-	rf.mu.Lock()
-	defer rf.mu.Unlock()
-	//defer DPrintf("Append: Node %v's log is %v\n", rf.me, rf.log)
+func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply) { 
+    rf.mu.Lock()
+    defer rf.mu.Unlock()
 
-	// Reply false if term < currentTerm(§5.1)
-	if args.Term < rf.currentTerm {
-		reply.Term, reply.Success = rf.currentTerm, false
-		return
-	}
-	// indicate the peer is the leader
-	if args.Term > rf.currentTerm {
-		//TODO - to be optimized
-		rf.currentTerm, rf.voteFor = args.Term, -1
-		rf.persist()
-	}
-	rf.becomeFollower(args.Term)
-	rf.persist()
-	rf.resetElectionTimer()
+    if args.Term < rf.currentTerm {
+        reply.Term, reply.Success = rf.currentTerm, false
+        return
+    }
 
+    if args.Term > rf.currentTerm {
+        rf.currentTerm, rf.voteFor = args.Term, -1
+        rf.persist()
+    }
+    rf.becomeFollower(args.Term)
+    rf.persist()
+    rf.resetElectionTimer()
 	// check the log is matched, if not, return the conflict index and term
 	// if an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it(§5.3)
-	if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
-		if BackupQuick {
-			reply.Term, reply.Success = rf.currentTerm, false
-			firstIndex := rf.getFirstLog().Index
-			lastIndex := rf.getLastLog().Index
-			if args.PrevLogIndex > rf.getLastLog().Index {
-				reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
+    if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
+        if BackupQuick {
+            reply.Term, reply.Success = rf.currentTerm, false
+            firstIndex := rf.getFirstLog().Index
+            lastIndex := rf.getLastLog().Index
+            if args.PrevLogIndex > lastIndex {
+                reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex + 1
 				// TODO - Add the situation that the leader's log is shorter than the follower's log
-			} else {
-				reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
-				for i := args.PrevLogIndex; i >= firstIndex; i-- {
-					if rf.log[i-firstIndex].Term != reply.XTerm {
-						reply.XIndex = i + 1
-						break
-					}
-				}
-			}	
-		} else {
-			reply.Term, reply.Success = rf.currentTerm, false
-		}
+            } else {
+                reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
+                reply.XIndex = firstIndex
+                for i := args.PrevLogIndex; i >= firstIndex; i-- {
+                    if rf.log[i-firstIndex].Term != reply.XTerm {
+                        reply.XIndex = i + 1
+                        break
+                    }
+                }
+            }
+        } else {
+            reply.Term, reply.Success = rf.currentTerm, false
+        }
+        return
+    }
 
-		return
-	}
-	// append any new entries not already in the log
-	firstLogIndex := rf.getFirstLog().Index
-	for index, entry := range args.Entries {
-		// find the junction of the existing log and the appended log.
-		if entry.Index-firstLogIndex >= len(rf.log) || rf.log[entry.Index-firstLogIndex].Term != entry.Term {
+    firstLogIndex := rf.getFirstLog().Index
+    for index, entry := range args.Entries {
+        if entry.Index < firstLogIndex {
+            continue
+        }
+        if entry.Index-firstLogIndex >= len(rf.log) || rf.log[entry.Index-firstLogIndex].Term != entry.Term {
+            if entry.Index-firstLogIndex >= len(rf.log) {
+                rf.log = append(rf.log, args.Entries[index:]...)
+            } else {
+                rf.log = append(rf.log[:entry.Index-firstLogIndex], args.Entries[index:]...)
+            }
 			//NOTE - slice is based on array, in the memory, we need to check whether the size of array is too large to store the data
-			rf.log = shrinkEntries(append(rf.log[:entry.Index-firstLogIndex], args.Entries[index:]...))
-			rf.persist()
-			break
-		}
-	}
+			rf.log = shrinkEntries(rf.log)
+            rf.persist()
+            break
+        }
+    }
 
-	// If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry) (paper)
-	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
-	if newCommitIndex > rf.commitIndex {
+    newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
+    if newCommitIndex > rf.commitIndex && newCommitIndex >= rf.getFirstLog().Index {
 		DPrintf("{Node %v} commitIndex from %v to %v with leaderCommit %v in term %v \n", rf.me, rf.commitIndex, newCommitIndex, args.LeaderCommit, rf.currentTerm)
-		rf.commitIndex = newCommitIndex
-		rf.applyCond.Signal()
-	}
-	reply.Term, reply.Success = rf.currentTerm, true
+        rf.commitIndex = newCommitIndex
+        rf.applyCond.Signal()
+    }
+    reply.Term, reply.Success = rf.currentTerm, true
 }
+
 
 func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapshotReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
-	defer DPrintf("InstallSnapshot: {Node %v}'s state is {state %v, term %v}} after processing InstallSnapshot,  InstallSnapshotArgs %v and InstallSnapshotReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
+	//defer DPrintf("InstallSnapshot: {Node %v}'s state is {state %v, term %v}} after processing InstallSnapshot,  InstallSnapshotArgs %v and InstallSnapshotReply %v ", rf.me, rf.state, rf.currentTerm, args, reply)
 	reply.Term = rf.currentTerm
 	if args.Term < rf.currentTerm {
 		return

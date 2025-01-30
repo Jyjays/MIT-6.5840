@@ -19,8 +19,8 @@ package raft
 
 import (
 	"bytes"
-	// "log"
-	// "os"
+	"log"
+	"os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -73,7 +73,7 @@ type LogEntry struct {
 // 	ElectionTimeout   = 1000
 // )
 
-const BackupQuick = false
+const BackupQuick = true
 
 
 // A Go object implementing a single Raft peer.
@@ -291,7 +291,7 @@ func (rf *Raft) checkNeedCommit() bool {
     // 确保有多数派
     quorumIndex := matchIndex[length-length/2-1]
     firstIndex := rf.getFirstLog().Index
-
+	DPrintf("Node %d: quorumIndex %d, commitIndex %d\n", rf.me, quorumIndex, rf.commitIndex)
 	// NOTE - Figure 8 in the paper
     if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
         rf.commitIndex = quorumIndex
@@ -322,27 +322,31 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	log.Fatalf("failed to open log file: %v", err)
-	// }
-	// defer logFile.Close()
-	// log.SetOutput(logFile)
-	for rf.killed() == false {
-
-		select {
-		case <-rf.electionTimer.C:
-			rf.StartElection()
-		case <-rf.heartbeatTimer.C:
-			rf.mu.Lock()
-			if rf.state != Follower {
-				// should send heartbeat
-				rf.SendHeartbeats()
-				rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
-			}
-			rf.mu.Unlock()
-		}
+	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		log.Fatalf("failed to open log file: %v", err)
 	}
+	defer logFile.Close()
+	log.SetOutput(logFile)
+    for rf.killed() == false {
+        select {
+        case <-rf.electionTimer.C:
+            rf.mu.Lock()
+            if rf.state == Follower {
+                rf.mu.Unlock()
+                rf.StartElection()
+            } else {
+                rf.mu.Unlock()
+            }
+        case <-rf.heartbeatTimer.C:
+            rf.mu.Lock()
+            if rf.state != Follower {
+                rf.SendHeartbeats()
+                rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
+            }
+            rf.mu.Unlock()
+        }
+    }
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -497,7 +501,7 @@ func (rf *Raft) StartElection() {
 	rargs := rf.MakeRequestVoteArgs()
 	rf.mu.Unlock()
 
-	//REVIEW - wg的作用（gpt写的-_-）
+	//REVIEW - wg的作用
 	var votes int32 = 1
 	var wg sync.WaitGroup
 	voteThreshold := len(rf.peers) / 2 // 过半数阈值

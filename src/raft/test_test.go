@@ -544,7 +544,7 @@ func TestBackup3B(t *testing.T) {
 	if leader2 == other {
 		other = (leader2 + 1) % servers
 	}
-	DPrintf("leader2: %v, disconnect other: %v", leader2, other)
+	DPrintf("leader2: %v, disconnect other: %v\n", leader2, other)
 	cfg.disconnect(other)
 
 	// lots more commands that won't commit
@@ -554,14 +554,14 @@ func TestBackup3B(t *testing.T) {
 
 	time.Sleep(RaftElectionTimeout / 2)
 
-	DPrintf("disconnect all")
+	DPrintf("disconnect all\n")
 
 	// bring original leader back to life,
 	for i := 0; i < servers; i++ {
 		cfg.disconnect(i)
 	}
 
-	DPrintf("connect %v %v %v", leader1, (leader1+1)%servers, other)
+	DPrintf("connect %v %v %v\n", leader1, (leader1+1)%servers, other)
 	cfg.connect((leader1 + 0) % servers)
 	cfg.connect((leader1 + 1) % servers)
 	cfg.connect(other)
@@ -572,7 +572,7 @@ func TestBackup3B(t *testing.T) {
 	}
 
 	// now everyone
-	DPrintf("connect all")
+	DPrintf("connect all\n")
 	for i := 0; i < servers; i++ {
 		cfg.connect(i)
 	}

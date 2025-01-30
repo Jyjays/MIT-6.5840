@@ -4,8 +4,8 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	//"log"
-	"fmt"
+	"log"
+	//"fmt"
 )
 
 // Debugging
@@ -17,8 +17,8 @@ func currentTime() string {
 
 func DPrintf(format string, a ...interface{}) {
 	if Debug {
-		//log.Printf(format, a...)
-		fmt.Printf(format, a...)
+		log.Printf(format, a...)
+		//fmt.Printf(format, a...)
 	}
 }
 
@@ -113,7 +113,7 @@ func MakeAppendEntriesReply(term int, success bool) AppendEntriesReply {
 }
 
 func (rf *Raft) isMatched(index, term int) bool {
-	return index <= rf.getLastLog().Index && term == rf.log[index-rf.getFirstLog().Index].Term
+	return index >= rf.getFirstLog().Index && index <= rf.getLastLog().Index && term == rf.log[index-rf.getFirstLog().Index].Term
 }
 
 func (rf *Raft) isUpToDate(index, term int) bool {
