@@ -159,8 +159,8 @@ func (rf *Raft) becomeLeader() {
 	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }
 
-const ElectionTimeout = 1000
-const HeartbeatTimeout = 125
+const ElectionTimeout = 500
+const HeartbeatTimeout = 50
 
 type LockedRand struct {
 	mu   sync.Mutex

@@ -102,7 +102,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
             if args.PrevLogIndex > lastIndex {
                 reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex + 1
 				// TODO - Add the situation that the leader's log is shorter than the follower's log
-            } else {
+            } else if args.PrevLogIndex >= firstIndex{
                 reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
                 reply.XIndex = firstIndex
                 for i := args.PrevLogIndex; i >= firstIndex; i-- {
@@ -111,7 +111,10 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
                         break
                     }
                 }
-            }
+            } else {
+				//NOTE - prevLogIndex is smaller than the firstIndex, which means the follower's log is longer than the leader's log
+				reply.XTerm, reply.XIndex, reply.XLen = -1, -1, firstIndex
+			}
         } else {
             reply.Term, reply.Success = rf.currentTerm, false
         }

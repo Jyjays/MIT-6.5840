@@ -19,8 +19,8 @@ package raft
 
 import (
 	"bytes"
-	"log"
-	"os"
+	// "log"
+	// "os"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -291,7 +291,7 @@ func (rf *Raft) checkNeedCommit() bool {
     // 确保有多数派
     quorumIndex := matchIndex[length-length/2-1]
     firstIndex := rf.getFirstLog().Index
-	DPrintf("Node %d: quorumIndex %d, commitIndex %d\n", rf.me, quorumIndex, rf.commitIndex)
+	DPrintf("Node %d: quorumIndex %d, commitIndex %d, term %d\n", rf.me, quorumIndex, rf.commitIndex, rf.currentTerm)
 	// NOTE - Figure 8 in the paper
     if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
         rf.commitIndex = quorumIndex
@@ -322,12 +322,12 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		log.Fatalf("failed to open log file: %v", err)
-	}
-	defer logFile.Close()
-	log.SetOutput(logFile)
+	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// if err != nil {
+	// 	log.Fatalf("failed to open log file: %v", err)
+	// }
+	// defer logFile.Close()
+	// log.SetOutput(logFile)
     for rf.killed() == false {
         select {
         case <-rf.electionTimer.C:
