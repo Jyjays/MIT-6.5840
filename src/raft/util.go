@@ -9,7 +9,7 @@ import (
 )
 
 // Debugging
-const Debug = true
+const Debug = false
 
 func currentTime() string {
 	return time.Now().Format("2025-01-19 15:37:05")

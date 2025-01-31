@@ -8,6 +8,9 @@ import "math/big"
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
+	curId int64
+	leaderId int
+	//lock   sync.Mutex
 }
 
 func nrand() int64 {
@@ -21,7 +24,26 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
+	cur_id := nrand()
 	return ck
+}
+
+func (ck *Clerk) getLeader() int {
+	return ck.leaderId
+}
+
+fucn (ck *Clerk) findLeader() {
+	for {
+		for i := 0; i < len(ck.servers); i++ {
+			args := GetArgs{Key: "findLeader"}
+			reply := GetReply{}
+			ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
+			if ok {
+				ck.leaderId = i
+				return
+			}
+		}
+	}
 }
 
 // fetch the current value for a key.
@@ -35,9 +57,16 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) Get(key string) string {
-
-	// You will have to modify this function.
-	return ""
+	args := GetArgs{Key: key}
+	reply := GetReply{}
+	for {
+		ok := ck.servers[].Call("KVServer.Get", &args, &reply)
+		if ok {
+			break
+		}
+	
+	}
+	return reply.Value
 }
 
 // shared by Put and Append.
