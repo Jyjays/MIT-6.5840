@@ -1,12 +1,13 @@
 package kvraft
 
 import (
-	"6.5840/labgob"
-	"6.5840/labrpc"
-	"6.5840/raft"
 	"log"
 	"sync"
 	"sync/atomic"
+
+	"6.5840/labgob"
+	"6.5840/labrpc"
+	"6.5840/raft"
 )
 
 const Debug = false
@@ -18,11 +19,12 @@ func DPrintf(format string, a ...interface{}) (n int, err error) {
 	return
 }
 
-
 type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
+	Type     string // "Get", "Put", "Append"
+	Key      string
+	Value    string
+	ClientID int64 // 唯一标识客户端
+	Seq      int   // 客户端分配的递增序列号
 }
 
 type KVServer struct {
@@ -32,14 +34,33 @@ type KVServer struct {
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
 
-	maxraftstate int // snapshot if log grows this big
-
+	maxraftstate int                         // snapshot if log grows this big
+	kvData       map[string]string           // 键值存储
+	clientSeq    map[int64]int               // 记录客户端最大序列号
+	notifyMap    map[int]chan *raft.ApplyMsg // 通知通道
+	persist      *raft.Persister             // 持久化存储（Part B 使用）
 	// Your definitions here.
 }
 
+func (kv *KVServer) IsLeader() bool {
+	_, isLeader := kv.rf.GetState()
+	return isLeader
+}
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if !kv.IsLeader() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	if value, ok := kv.kvData[args.Key]; ok {
+		reply.Err = OK
+		reply.Value = value
+	} else {
+		reply.Err = ErrNoKey
+	}
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {

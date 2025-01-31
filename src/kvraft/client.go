@@ -1,14 +1,16 @@
 package kvraft
 
-import "6.5840/labrpc"
-import "crypto/rand"
-import "math/big"
+import (
+	"crypto/rand"
+	"math/big"
 
+	"6.5840/labrpc"
+)
 
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
-	curId int64
+	curId    int64
 	leaderId int
 	//lock   sync.Mutex
 }
@@ -24,26 +26,13 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
-	cur_id := nrand()
+	//cur_id := nrand()
+	ck.leaderId = 0
 	return ck
 }
 
 func (ck *Clerk) getLeader() int {
 	return ck.leaderId
-}
-
-fucn (ck *Clerk) findLeader() {
-	for {
-		for i := 0; i < len(ck.servers); i++ {
-			args := GetArgs{Key: "findLeader"}
-			reply := GetReply{}
-			ok := ck.servers[i].Call("KVServer.Get", &args, &reply)
-			if ok {
-				ck.leaderId = i
-				return
-			}
-		}
-	}
 }
 
 // fetch the current value for a key.
@@ -59,12 +48,13 @@ fucn (ck *Clerk) findLeader() {
 func (ck *Clerk) Get(key string) string {
 	args := GetArgs{Key: key}
 	reply := GetReply{}
-	for {
-		ok := ck.servers[].Call("KVServer.Get", &args, &reply)
-		if ok {
+	len := len(ck.servers)
+	for i := ck.getLeader(); ; i = (i + 1) % len {
+		ck.servers[i].Call("KVServer.Get", &args, &reply)
+		if reply.Err == OK {
+			ck.leaderId = i
 			break
 		}
-	
 	}
 	return reply.Value
 }
