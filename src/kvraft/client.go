@@ -10,7 +10,8 @@ import (
 type Clerk struct {
 	servers []*labrpc.ClientEnd
 	// You will have to modify this struct.
-	curId    int64
+	ClientID int64
+	seq      int
 	leaderId int
 	//lock   sync.Mutex
 }
@@ -26,7 +27,8 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck := new(Clerk)
 	ck.servers = servers
 	// You'll have to add code here.
-	//cur_id := nrand()
+	ck.ClientID = nrand()
+	ck.seq = 1
 	ck.leaderId = 0
 	return ck
 }
@@ -53,6 +55,12 @@ func (ck *Clerk) Get(key string) string {
 		ck.servers[i].Call("KVServer.Get", &args, &reply)
 		if reply.Err == OK {
 			ck.leaderId = i
+			ck.seq++
+			break
+		} else if reply.Err == ErrWrongLeader {
+			continue
+		} else if reply.Err == ErrNoKey {
+			DPrintf("Get: ErrNoKey:%v\n", reply)
 			break
 		}
 	}
@@ -69,6 +77,23 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	args := PutAppendArgs{Key: key, Value: value, ClientID: ck.ClientID, Seq: ck.seq}
+	reply := PutAppendReply{}
+	len := len(ck.servers)
+	for i := ck.getLeader(); ; i = (i + 1) % len {
+		ck.servers[i].Call("KVServer."+op, &args, &reply)
+		if reply.Err == OK {
+			ck.leaderId = i
+			ck.seq++
+			break
+		} else if reply.Err == ErrWrongLeader {
+			continue
+		} else if reply.Err == ErrNoKey {
+			DPrintf("PutAppend:ErrNoKey %v\n", reply)
+			break
+		}
+	}
+
 }
 
 func (ck *Clerk) Put(key string, value string) {

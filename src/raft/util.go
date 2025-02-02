@@ -1,10 +1,10 @@
 package raft
 
 import (
+	"log"
 	"math/rand"
 	"sync"
 	"time"
-	"log"
 	//"fmt"
 )
 
@@ -135,11 +135,11 @@ func (rf *Raft) becomeFollower(term int) {
 func (rf *Raft) becomeCandidate() {
 	if rf.state == Leader {
 		DPrintf("[Server %d] is already leader, term %d\n", rf.me, rf.currentTerm)
-        return
-    }
-    rf.state = Candidate
-    rf.currentTerm += 1
-    rf.voteFor = rf.me  // 必须为自己投票
+		return
+	}
+	rf.state = Candidate
+	rf.currentTerm += 1
+	rf.voteFor = rf.me      // 必须为自己投票
 	rf.electionTimer.Stop() // stop election
 	rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
 }
@@ -209,7 +209,6 @@ func (rf *Raft) getPrevEntry(peer int) LogEntry {
 	return rf.log[rf.nextIndex[peer]-1]
 }
 
-
 func shrinkEntries(entries []LogEntry) []LogEntry {
 	const lenMultiple = 2
 	if cap(entries) > len(entries)*lenMultiple {
@@ -220,7 +219,7 @@ func shrinkEntries(entries []LogEntry) []LogEntry {
 	return entries
 }
 
-func (rf *Raft) findLastLogIndexByTerm(term int) (bool ,int) {
+func (rf *Raft) findLastLogIndexByTerm(term int) (bool, int) {
 	// 如果找到了，返回true和index
 	// 如果没找到，返回false和-1
 

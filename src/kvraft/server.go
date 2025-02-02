@@ -1,7 +1,6 @@
 package kvraft
 
 import (
-	"log"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -10,15 +9,6 @@ import (
 	"6.5840/labrpc"
 	"6.5840/raft"
 )
-
-const Debug = false
-
-func DPrintf(format string, a ...interface{}) (n int, err error) {
-	if Debug {
-		log.Printf(format, a...)
-	}
-	return
-}
 
 type Op struct {
 	Type     string // "Get", "Put", "Append"
@@ -37,10 +27,10 @@ type KVServer struct {
 
 	maxraftstate int               // snapshot if log grows this big
 	kvData       map[string]string // 键值存储
-	cache        map[int64]interface{}
-	clientSeq    map[int64]int               // 记录客户端最大序列号
-	notifyMap    map[int]chan *raft.ApplyMsg // 通知通道
-	persist      *raft.Persister             // 持久化存储（Part B 使用）
+	cache        map[int64]string
+	clientSeq    map[int64]int    // 记录客户端最大序列号
+	notifyMap    map[int]chan int // 通知通道
+	persist      *raft.Persister  // 持久化存储（Part B 使用）
 }
 
 func (kv *KVServer) IsLeader() bool {
@@ -65,9 +55,13 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 			ClientID: args.ClientID,
 			Seq:      args.Seq,
 		}
+		kv.mu.Unlock()
 		index, flag, msg := kv.startOp(oper)
-		checkMsg(index, flag, msg, reply)
-		DPrintf("Get:Reply:%v\n", reply)
+		kv.mu.Lock()
+
+		if !checkMsg(index, flag, msg, reply) {
+			return
+		}
 	} else {
 		reply.Err = ErrNoKey
 	}
@@ -82,7 +76,8 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 	lastSeq, exists := kv.clientSeq[args.ClientID]
 	if exists && args.Seq <= lastSeq {
-		reply.Value = kv.cache[args.ClientID].(string)
+		DPrintf("lastSeq:%v, args.Seq:%v\n", lastSeq, args.Seq)
+		//reply.Value = kv.cache[args.ClientID].(string)
 		reply.Err = OK
 		return
 	}
@@ -93,11 +88,13 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		ClientID: args.ClientID,
 		Seq:      args.Seq,
 	}
+	kv.mu.Unlock()
 	index, flag, msg := kv.startOp(oper)
+	kv.mu.Lock()
 	if !checkMsg(index, flag, msg, reply) {
 		return
 	} else {
-		kv.cache[args.ClientID] = args.Value
+		kv.cache[args.ClientID] = oper.Value
 	}
 }
 
@@ -106,7 +103,7 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	defer kv.mu.Unlock()
 	lastSeq, exists := kv.clientSeq[args.ClientID]
 	if exists && args.Seq <= lastSeq {
-		reply.Value = kv.cache[args.ClientID].(string)
+		//reply.Value = kv.cache[args.ClientID].(string)
 		reply.Err = OK
 		return
 	}
@@ -117,31 +114,40 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		ClientID: args.ClientID,
 		Seq:      args.Seq,
 	}
+	kv.mu.Unlock()
 	index, flag, msg := kv.startOp(oper)
+	kv.mu.Lock()
 	if !checkMsg(index, flag, msg, reply) {
 		return
 	} else {
-		kv.cache[args.ClientID] = args.Value
+		kv.cache[args.ClientID] = oper.Value
 	}
 }
 
-func (kv *KVServer) startOp(op Op) (int, bool, *raft.ApplyMsg) {
+func (kv *KVServer) startOp(op Op) (int, bool, int) {
 	index, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
-		return index, false, nil
+		return index, false, -1
 	}
+
+	// 加锁保护 notifyMap
 	kv.mu.Lock()
-	kv.notifyMap[index] = make(chan *raft.ApplyMsg, 1)
+	kv.notifyMap[index] = make(chan int, 1)
+	ch := kv.notifyMap[index]
 	kv.mu.Unlock()
-	// 等待通知并加上超时处理
+
+	// 等待结果或超时
 	select {
-	case msg := <-kv.notifyMap[index]:
+	case msg := <-ch:
 		return index, true, msg
-	case <-time.After(500 * time.Millisecond):
-		return index, false, nil
+	case <-time.After(500 * time.Millisecond): // 添加超时处理
+		kv.mu.Lock()
+		DPrintf("Timeout:%v\n", index)
+		delete(kv.notifyMap, index) // 清理超时的通道
+		kv.mu.Unlock()
+		return index, false, -1
 	}
 }
-
 func checkDuplication(clientID int64, seq int, clientSeq map[int64]int) bool {
 	lastSeq, exists := clientSeq[clientID]
 	if exists && seq <= lastSeq {
@@ -150,44 +156,21 @@ func checkDuplication(clientID int64, seq int, clientSeq map[int64]int) bool {
 	return false
 }
 
-func checkMsg(index int, flag bool, msg *raft.ApplyMsg, reply Reply) bool {
+func checkMsg(index int, flag bool, msg int, reply Reply) bool {
+	DPrintf("index:%v, flag:%v, msg:%v\n", index, flag, msg)
 	if !flag {
 		reply.SetErr(ErrWrongLeader)
 		return false
 	}
-	if !msg.CommandValid || msg.CommandIndex != index {
+	if msg != index {
 		reply.SetErr(ErrWrongLeader)
 		return false
 	}
 	reply.SetErr(OK)
-	reply.SetValue(msg.Command.(Op).Value)
+	DPrintf("Reply:%v\n", reply)
 	return true
 }
 
-//NOTE - go 1.18 and above, we can use generics
-// func checkMsg[T Reply](index int, flag bool, msg *raft.ApplyMsg, reply T) bool {
-// 	if !flag {
-// 		reply.SetErr(ErrWrongLeader)
-// 		return false
-// 	} else {
-// 		if !msg.CommandValid || msg.CommandIndex != index {
-// 			reply.SetErr(ErrWrongLeader)
-// 			return false
-// 		} else {
-// 			reply.SetErr(OK)
-// 		}
-// 	}
-// 	return true
-// }
-
-// the tester calls Kill() when a KVServer instance won't
-// be needed again. for your convenience, we supply
-// code to set rf.dead (without needing a lock),
-// and a killed() method to test rf.dead in
-// long-running loops. you can also add your own
-// code to Kill(). you're not required to do anything
-// about this, but it may be convenient (for example)
-// to suppress debug output from a Kill()ed instance.
 func (kv *KVServer) Kill() {
 	atomic.StoreInt32(&kv.dead, 1)
 	kv.rf.Kill()
@@ -228,8 +211,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 
 	kv.kvData = make(map[string]string)
+	kv.cache = make(map[int64]string)
 	kv.clientSeq = make(map[int64]int)
-	kv.notifyMap = make(map[int]chan *raft.ApplyMsg)
+	kv.notifyMap = make(map[int]chan int)
 	kv.persist = persister
 
 	go kv.applier()
