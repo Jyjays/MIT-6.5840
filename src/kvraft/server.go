@@ -4,6 +4,7 @@ import (
 	"log"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"6.5840/labgob"
 	"6.5840/labrpc"
@@ -34,12 +35,12 @@ type KVServer struct {
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
 
-	maxraftstate int                         // snapshot if log grows this big
-	kvData       map[string]string           // 键值存储
+	maxraftstate int               // snapshot if log grows this big
+	kvData       map[string]string // 键值存储
+	cache        map[int64]interface{}
 	clientSeq    map[int64]int               // 记录客户端最大序列号
 	notifyMap    map[int]chan *raft.ApplyMsg // 通知通道
 	persist      *raft.Persister             // 持久化存储（Part B 使用）
-	// Your definitions here.
 }
 
 func (kv *KVServer) IsLeader() bool {
@@ -56,7 +57,6 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 	if value, ok := kv.kvData[args.Key]; ok {
-		reply.Err = OK
 		reply.Value = value
 		oper := Op{
 			Type:     "Get",
@@ -65,19 +65,120 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 			ClientID: args.ClientID,
 			Seq:      args.Seq,
 		}
-		kv.rf.Start(oper)
+		index, flag, msg := kv.startOp(oper)
+		checkMsg(index, flag, msg, reply)
+		DPrintf("Get:Reply:%v\n", reply)
 	} else {
 		reply.Err = ErrNoKey
 	}
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if !kv.IsLeader() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	lastSeq, exists := kv.clientSeq[args.ClientID]
+	if exists && args.Seq <= lastSeq {
+		reply.Value = kv.cache[args.ClientID].(string)
+		reply.Err = OK
+		return
+	}
+	oper := Op{
+		Type:     "Put",
+		Key:      args.Key,
+		Value:    args.Value,
+		ClientID: args.ClientID,
+		Seq:      args.Seq,
+	}
+	index, flag, msg := kv.startOp(oper)
+	if !checkMsg(index, flag, msg, reply) {
+		return
+	} else {
+		kv.cache[args.ClientID] = args.Value
+	}
 }
 
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	lastSeq, exists := kv.clientSeq[args.ClientID]
+	if exists && args.Seq <= lastSeq {
+		reply.Value = kv.cache[args.ClientID].(string)
+		reply.Err = OK
+		return
+	}
+	oper := Op{
+		Type:     "Append",
+		Key:      args.Key,
+		Value:    args.Value,
+		ClientID: args.ClientID,
+		Seq:      args.Seq,
+	}
+	index, flag, msg := kv.startOp(oper)
+	if !checkMsg(index, flag, msg, reply) {
+		return
+	} else {
+		kv.cache[args.ClientID] = args.Value
+	}
 }
+
+func (kv *KVServer) startOp(op Op) (int, bool, *raft.ApplyMsg) {
+	index, _, isLeader := kv.rf.Start(op)
+	if !isLeader {
+		return index, false, nil
+	}
+	kv.mu.Lock()
+	kv.notifyMap[index] = make(chan *raft.ApplyMsg, 1)
+	kv.mu.Unlock()
+	// 等待通知并加上超时处理
+	select {
+	case msg := <-kv.notifyMap[index]:
+		return index, true, msg
+	case <-time.After(500 * time.Millisecond):
+		return index, false, nil
+	}
+}
+
+func checkDuplication(clientID int64, seq int, clientSeq map[int64]int) bool {
+	lastSeq, exists := clientSeq[clientID]
+	if exists && seq <= lastSeq {
+		return true
+	}
+	return false
+}
+
+func checkMsg(index int, flag bool, msg *raft.ApplyMsg, reply Reply) bool {
+	if !flag {
+		reply.SetErr(ErrWrongLeader)
+		return false
+	}
+	if !msg.CommandValid || msg.CommandIndex != index {
+		reply.SetErr(ErrWrongLeader)
+		return false
+	}
+	reply.SetErr(OK)
+	reply.SetValue(msg.Command.(Op).Value)
+	return true
+}
+
+//NOTE - go 1.18 and above, we can use generics
+// func checkMsg[T Reply](index int, flag bool, msg *raft.ApplyMsg, reply T) bool {
+// 	if !flag {
+// 		reply.SetErr(ErrWrongLeader)
+// 		return false
+// 	} else {
+// 		if !msg.CommandValid || msg.CommandIndex != index {
+// 			reply.SetErr(ErrWrongLeader)
+// 			return false
+// 		} else {
+// 			reply.SetErr(OK)
+// 		}
+// 	}
+// 	return true
+// }
 
 // the tester calls Kill() when a KVServer instance won't
 // be needed again. for your convenience, we supply
@@ -125,6 +226,13 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 
 	// You may need initialization code here.
+
+	kv.kvData = make(map[string]string)
+	kv.clientSeq = make(map[int64]int)
+	kv.notifyMap = make(map[int]chan *raft.ApplyMsg)
+	kv.persist = persister
+
+	go kv.applier()
 
 	return kv
 }

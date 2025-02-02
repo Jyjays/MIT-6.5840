@@ -75,7 +75,6 @@ type LogEntry struct {
 
 const BackupQuick = true
 
-
 // A Go object implementing a single Raft peer.
 type Raft struct {
 	mu        sync.RWMutex        // Lock to protect shared access to this peer's state
@@ -114,6 +113,13 @@ func (rf *Raft) GetState() (int, bool) {
 	defer rf.mu.RUnlock()
 	return rf.currentTerm, rf.state == Leader
 }
+
+func (rf *Raft) GetTerm() int {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	return rf.currentTerm
+}
+
 func (rf *Raft) encodeState() []byte {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
@@ -149,7 +155,6 @@ func (rf *Raft) readPersist(data []byte) {
 	rf.currentTerm, rf.voteFor, rf.log = currentTerm, voteFor, log
 	rf.lastApplied, rf.commitIndex = rf.getFirstLog().Index, rf.getFirstLog().Index
 }
-
 
 // the service says it has created a snapshot that has
 // all info up to and including index. this means the
@@ -255,22 +260,21 @@ func (rf *Raft) needReplicating(peer int) bool {
 }
 
 func (rf *Raft) replicator(peer int) {
-    rf.replicateCond[peer].L.Lock()
-    defer rf.replicateCond[peer].L.Unlock()
-    for rf.killed() == false {
-        for rf.needReplicating(peer) == false {
-            rf.replicateCond[peer].Wait()
-        }
-        rf.SendHeartbeatOrLogs(peer)
-        
-        rf.mu.Lock()  
-        if rf.checkNeedCommit() {
-            rf.applyCond.Signal()
-        }
-        rf.mu.Unlock()
-    }
-}
+	rf.replicateCond[peer].L.Lock()
+	defer rf.replicateCond[peer].L.Unlock()
+	for rf.killed() == false {
+		for rf.needReplicating(peer) == false {
+			rf.replicateCond[peer].Wait()
+		}
+		rf.SendHeartbeatOrLogs(peer)
 
+		rf.mu.Lock()
+		if rf.checkNeedCommit() {
+			rf.applyCond.Signal()
+		}
+		rf.mu.Unlock()
+	}
+}
 
 // According the matchIndex, check if there is a log entry that is replicated by a majority of servers
 // and has not been committed yet
@@ -280,27 +284,26 @@ func (rf *Raft) replicator(peer int) {
 // [10, 11, 12, 12, 13]
 // After sort , we can find which index was replicated by majority of servers
 func (rf *Raft) checkNeedCommit() bool {
-    length := len(rf.matchIndex)
-    if length == 0 {
-        return false
-    }
-    matchIndex := make([]int, length)
-    copy(matchIndex, rf.matchIndex)
-    sort.Ints(matchIndex)
+	length := len(rf.matchIndex)
+	if length == 0 {
+		return false
+	}
+	matchIndex := make([]int, length)
+	copy(matchIndex, rf.matchIndex)
+	sort.Ints(matchIndex)
 
-    // 确保有多数派
-    quorumIndex := matchIndex[length-length/2-1]
-    firstIndex := rf.getFirstLog().Index
+	// 确保有多数派
+	quorumIndex := matchIndex[length-length/2-1]
+	firstIndex := rf.getFirstLog().Index
 	DPrintf("Node %d: quorumIndex %d, commitIndex %d, term %d\n", rf.me, quorumIndex, rf.commitIndex, rf.currentTerm)
 	// NOTE - Figure 8 in the paper
-    if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
-        rf.commitIndex = quorumIndex
-        DPrintf("Leader's commitIndex updated to %d\n", rf.commitIndex)
-        return true
-    }
-    return false
+	if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
+		rf.commitIndex = quorumIndex
+		DPrintf("Leader's commitIndex updated to %d\n", rf.commitIndex)
+		return true
+	}
+	return false
 }
-
 
 // the tester doesn't halt goroutines created by Raft after each test,
 // but it does call the Kill() method. your code can use killed() to
@@ -328,25 +331,25 @@ func (rf *Raft) ticker() {
 	// }
 	// defer logFile.Close()
 	// log.SetOutput(logFile)
-    for rf.killed() == false {
-        select {
-        case <-rf.electionTimer.C:
-            rf.mu.Lock()
-            if rf.state == Follower {
-                rf.mu.Unlock()
-                rf.StartElection()
-            } else {
-                rf.mu.Unlock()
-            }
-        case <-rf.heartbeatTimer.C:
-            rf.mu.Lock()
-            if rf.state != Follower {
-                rf.SendHeartbeats()
-                rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
-            }
-            rf.mu.Unlock()
-        }
-    }
+	for rf.killed() == false {
+		select {
+		case <-rf.electionTimer.C:
+			rf.mu.Lock()
+			if rf.state == Follower {
+				rf.mu.Unlock()
+				rf.StartElection()
+			} else {
+				rf.mu.Unlock()
+			}
+		case <-rf.heartbeatTimer.C:
+			rf.mu.Lock()
+			if rf.state != Follower {
+				rf.SendHeartbeats()
+				rf.heartbeatTimer.Reset(StableHeartbeatTimeout())
+			}
+			rf.mu.Unlock()
+		}
+	}
 }
 
 // the service or tester wants to create a Raft server. the ports
@@ -418,10 +421,10 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 	//DPrintf("prevLogIndex %d, firstLogIndex %d\n", prevLogIndex, firstLogIndex)
 	if prevLogIndex < firstLogIndex {
 		// send installsnapshot
-		args := rf.MakeInstallSnapshotArgs();
+		args := rf.MakeInstallSnapshotArgs()
 		rf.mu.RUnlock()
 		reply := InstallSnapshotReply{}
-		if rf.sendInstallSnapshot(peer,args,&reply){
+		if rf.sendInstallSnapshot(peer, args, &reply) {
 			rf.mu.Lock()
 			defer rf.mu.Unlock()
 			if reply.Term > rf.currentTerm {
@@ -433,7 +436,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 			rf.nextIndex[peer] = args.LastIncludedIndex + 1
 			rf.matchIndex[peer] = args.LastIncludedIndex
 		}
-		return 
+		return
 	}
 	args := rf.MakeAppendEntriesArgs(prevLogIndex)
 	rf.mu.RUnlock()
@@ -449,20 +452,20 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 				} else if reply.Term == rf.currentTerm {
 					if BackupQuick {
 						if reply.XTerm == -1 {
-							rf.nextIndex[peer] = Max(1, reply.XLen)  // 确保 `nextIndex` 至少是 1
+							rf.nextIndex[peer] = Max(1, reply.XLen) // 确保 `nextIndex` 至少是 1
 						} else {
-						// if reply.XIndex == 0 {
-						// 	flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
-						// 	if flag {
-						// 		rf.nextIndex[peer] = last + 1
-						// 	} else {
-						// 		rf.nextIndex[peer] = 1
-						// 	}
+							// if reply.XIndex == 0 {
+							// 	flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
+							// 	if flag {
+							// 		rf.nextIndex[peer] = last + 1
+							// 	} else {
+							// 		rf.nextIndex[peer] = 1
+							// 	}
 
-						// } else {
-						// 	rf.nextIndex[peer] = Max(1, reply.XIndex)
-						// }
-							flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
+							// } else {
+							// 	rf.nextIndex[peer] = Max(1, reply.XIndex)
+							// }
+							flag, last := rf.findLastLogIndexByTerm(reply.XTerm)
 							if flag {
 								rf.nextIndex[peer] = last + 1
 							} else {
@@ -470,7 +473,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 							}
 
 						}
-					}else {
+					} else {
 						rf.nextIndex[peer] -= 1
 					}
 				}
@@ -479,7 +482,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 				rf.nextIndex[peer] = rf.matchIndex[peer] + 1
 			}
 		}
-		
+
 		rf.mu.Unlock()
 	}
 }
