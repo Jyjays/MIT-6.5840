@@ -74,10 +74,7 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	lastSeq, exists := kv.clientSeq[args.ClientID]
-	if exists && args.Seq <= lastSeq {
-		DPrintf("lastSeq:%v, args.Seq:%v\n", lastSeq, args.Seq)
-		//reply.Value = kv.cache[args.ClientID].(string)
+	if kv.checkDuplicate(args.ClientID, args.Seq) {
 		reply.Err = OK
 		return
 	}
@@ -101,9 +98,7 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	lastSeq, exists := kv.clientSeq[args.ClientID]
-	if exists && args.Seq <= lastSeq {
-		//reply.Value = kv.cache[args.ClientID].(string)
+	if kv.checkDuplicate(args.ClientID, args.Seq) {
 		reply.Err = OK
 		return
 	}
@@ -145,11 +140,11 @@ func (kv *KVServer) startOp(op Op) (int, bool, int) {
 		DPrintf("Timeout:%v\n", index)
 		delete(kv.notifyMap, index) // 清理超时的通道
 		kv.mu.Unlock()
-		return index, false, -1
+		return index, true, -1
 	}
 }
-func checkDuplication(clientID int64, seq int, clientSeq map[int64]int) bool {
-	lastSeq, exists := clientSeq[clientID]
+func (kv *KVServer) checkDuplicate(clientId int64, seq int) bool {
+	lastSeq, exists := kv.clientSeq[clientId]
 	if exists && seq <= lastSeq {
 		return true
 	}
@@ -163,7 +158,7 @@ func checkMsg(index int, flag bool, msg int, reply Reply) bool {
 		return false
 	}
 	if msg != index {
-		reply.SetErr(ErrWrongLeader)
+		reply.SetErr(ErrTimeout)
 		return false
 	}
 	reply.SetErr(OK)

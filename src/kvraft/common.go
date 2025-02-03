@@ -4,13 +4,13 @@ const (
 	OK             = "OK"
 	ErrNoKey       = "ErrNoKey"
 	ErrWrongLeader = "ErrWrongLeader"
+	ErrTimeout     = "ErrTimeout"
 )
 
 type Err string
 
 type Reply interface {
 	SetErr(err Err)
-	SetValue(value string)
 	GetErr() Err
 }
 
@@ -26,16 +26,11 @@ type PutAppendArgs struct {
 }
 
 type PutAppendReply struct {
-	Err   Err
-	Value string
+	Err Err
 }
 
 func (reply *PutAppendReply) SetErr(err Err) {
 	reply.Err = err
-}
-
-func (reply *PutAppendReply) SetValue(value string) {
-	reply.Value = value
 }
 
 func (reply *PutAppendReply) GetErr() Err {
@@ -56,10 +51,6 @@ type GetReply struct {
 
 func (reply *GetReply) SetErr(err Err) {
 	reply.Err = err
-}
-
-func (reply *GetReply) SetValue(value string) {
-	reply.Value = value
 }
 
 func (reply *GetReply) GetErr() Err {

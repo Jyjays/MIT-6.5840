@@ -8,7 +8,10 @@ import (
 func (kv *KVServer) applyOp(op Op) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-
+	lastSeq, exists := kv.clientSeq[op.ClientID]
+	if exists && op.Seq <= lastSeq {
+		return
+	}
 	// 执行操作
 	switch op.Type {
 	case "Put":
