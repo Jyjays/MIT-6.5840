@@ -3,6 +3,7 @@ package kvraft
 import (
 	"crypto/rand"
 	"math/big"
+	"time"
 
 	"6.5840/labrpc"
 )
@@ -59,7 +60,7 @@ func (ck *Clerk) Get(key string) string {
 		} else if reply.Err == ErrWrongLeader {
 			continue
 		} else if reply.Err == ErrNoKey {
-			DPrintf("Get: ErrNoKey:%v\n", reply)
+			//DPrintf("Get: ErrNoKey:%v\n", reply)
 			break
 		}
 	}
@@ -83,6 +84,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	for i := ck.getLeader(); ; i = (i + 1) % len {
 		ck.servers[i].Call("KVServer."+op, &args, &reply)
 		if reply.Err == OK {
+			DPrintf("PutAppend finish key:%v value:%v\n", key, value)
 			ck.leaderId = i
 			break
 		} else if reply.Err == ErrWrongLeader {
@@ -91,6 +93,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			DPrintf("PutAppend:ErrNoKey %v\n", reply)
 			break
 		}
+		time.Sleep(100 * time.Millisecond)
 	}
 
 }

@@ -114,12 +114,6 @@ func (rf *Raft) GetState() (int, bool) {
 	return rf.currentTerm, rf.state == Leader
 }
 
-func (rf *Raft) GetTerm() int {
-	rf.mu.RLock()
-	defer rf.mu.RUnlock()
-	return rf.currentTerm
-}
-
 func (rf *Raft) encodeState() []byte {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
@@ -295,11 +289,11 @@ func (rf *Raft) checkNeedCommit() bool {
 	// 确保有多数派
 	quorumIndex := matchIndex[length-length/2-1]
 	firstIndex := rf.getFirstLog().Index
-	DPrintf("Node %d: quorumIndex %d, commitIndex %d, term %d\n", rf.me, quorumIndex, rf.commitIndex, rf.currentTerm)
+	//DPrintf("Node %d: quorumIndex %d, commitIndex %d, term %d\n", rf.me, quorumIndex, rf.commitIndex, rf.currentTerm)
 	// NOTE - Figure 8 in the paper
 	if quorumIndex > rf.commitIndex && rf.log[quorumIndex-firstIndex].Term == rf.currentTerm {
 		rf.commitIndex = quorumIndex
-		DPrintf("Leader's commitIndex updated to %d\n", rf.commitIndex)
+		//DPrintf("Leader's commitIndex updated to %d\n", rf.commitIndex)
 		return true
 	}
 	return false

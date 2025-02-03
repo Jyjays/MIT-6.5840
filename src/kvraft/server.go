@@ -25,12 +25,14 @@ type KVServer struct {
 	applyCh chan raft.ApplyMsg
 	dead    int32 // set by Kill()
 
-	maxraftstate int               // snapshot if log grows this big
-	kvData       map[string]string // 键值存储
-	cache        map[int64]string
-	clientSeq    map[int64]int    // 记录客户端最大序列号
-	notifyMap    map[int]chan int // 通知通道
-	persist      *raft.Persister  // 持久化存储（Part B 使用）
+	maxraftstate int // snapshot if log grows this big
+	//REVIEW - lastApplied shouldn't be in the server
+	lastApplied int               // 最后一个已经应用到状态机的日志索引
+	kvData      map[string]string // 键值存储
+	//cache       map[int64]string
+	clientSeq map[int64]int    // 记录客户端最大序列号
+	notifyMap map[int]chan int // 通知通道
+	persist   *raft.Persister  // 持久化存储（Part B 使用）
 }
 
 func (kv *KVServer) IsLeader() bool {
@@ -47,7 +49,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 	if value, ok := kv.kvData[args.Key]; ok {
-		
+
 		oper := Op{
 			Type:     "Get",
 			Key:      args.Key,
@@ -71,6 +73,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+
 	if !kv.IsLeader() {
 		reply.Err = ErrWrongLeader
 		return
@@ -91,8 +94,6 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	if !checkMsg(index, flag, msg, reply) {
 		return
-	} else {
-		kv.cache[args.ClientID] = oper.Value
 	}
 }
 
@@ -115,8 +116,6 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	if !checkMsg(index, flag, msg, reply) {
 		return
-	} else {
-		kv.cache[args.ClientID] = oper.Value
 	}
 }
 
@@ -127,20 +126,15 @@ func (kv *KVServer) startOp(op Op) (int, bool, int) {
 	}
 
 	// 加锁保护 notifyMap
-	kv.mu.Lock()
-	kv.notifyMap[index] = make(chan int, 1)
-	ch := kv.notifyMap[index]
-	kv.mu.Unlock()
+	ch := kv.getNotifyCh(index)
 
 	// 等待结果或超时
 	select {
 	case msg := <-ch:
+		kv.closeNotifyCh(index)
 		return index, true, msg
 	case <-time.After(500 * time.Millisecond): // 添加超时处理
-		kv.mu.Lock()
-		DPrintf("Timeout:%v\n", index)
-		delete(kv.notifyMap, index) // 清理超时的通道
-		kv.mu.Unlock()
+		kv.closeNotifyCh(index)
 		return index, true, -1
 	}
 }
@@ -163,7 +157,6 @@ func checkMsg(index int, flag bool, msg int, reply Reply) bool {
 		return false
 	}
 	reply.SetErr(OK)
-	DPrintf("Reply:%v\n", reply)
 	return true
 }
 
@@ -207,7 +200,6 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	// You may need initialization code here.
 
 	kv.kvData = make(map[string]string)
-	kv.cache = make(map[int64]string)
 	kv.clientSeq = make(map[int64]int)
 	kv.notifyMap = make(map[int]chan int)
 	kv.persist = persister

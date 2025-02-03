@@ -8,8 +8,8 @@ import (
 func (kv *KVServer) applyOp(op Op) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	lastSeq, exists := kv.clientSeq[op.ClientID]
-	if exists && op.Seq <= lastSeq {
+	DPrintf("Server %v applyOp %v\n", kv.me, op)
+	if kv.checkDuplicate(op.ClientID, op.Seq) {
 		return
 	}
 	// 执行操作
@@ -17,16 +17,11 @@ func (kv *KVServer) applyOp(op Op) {
 	case "Put":
 		kv.kvData[op.Key] = op.Value
 	case "Append":
-		currentValue, exists := kv.kvData[op.Key]
-		if !exists {
-			currentValue = ""
-		}
-		kv.kvData[op.Key] = currentValue + op.Value
+		kv.kvData[op.Key] += op.Value
 	}
 
 	// 更新客户端序列号
 	kv.clientSeq[op.ClientID] = op.Seq
-	kv.clearCache(op.ClientID)
 }
 
 func (kv *KVServer) applier() {
@@ -39,20 +34,21 @@ func (kv *KVServer) applier() {
 	for kv.killed() == false {
 
 		for msg := range kv.applyCh {
-			if msg.CommandValid {
-				DPrintf("Server %v apply msg %v\n", kv.me, msg)
-				op := msg.Command.(Op)
-				kv.applyOp(op)
-
-				kv.mu.Lock()
-				if ch, ok := kv.notifyMap[msg.CommandIndex]; ok {
-					// 发送操作已完成的信号（例如日志索引）
-					DPrintf("Send msg %v to ch %v\n", msg, ch)
-					ch <- msg.CommandIndex
-					delete(kv.notifyMap, msg.CommandIndex)
-				}
-				kv.mu.Unlock()
+			DPrintf("Server %v apply msg %v\n", kv.me, msg)
+			if msg.CommandIndex <= kv.lastApplied {
+				continue
 			}
+			kv.lastApplied = msg.CommandIndex
+			op := msg.Command.(Op)
+
+			kv.applyOp(op)
+
+			ch := kv.getNotifyCh(msg.CommandIndex)
+			select {
+			case ch <- msg.CommandIndex:
+			default:
+			}
+
 		}
 	}
 }
