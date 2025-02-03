@@ -47,7 +47,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		return
 	}
 	if value, ok := kv.kvData[args.Key]; ok {
-		reply.Value = value
+		
 		oper := Op{
 			Type:     "Get",
 			Key:      args.Key,
@@ -62,6 +62,7 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		if !checkMsg(index, flag, msg, reply) {
 			return
 		}
+		reply.Value = value
 	} else {
 		reply.Err = ErrNoKey
 	}

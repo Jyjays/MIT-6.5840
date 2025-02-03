@@ -28,7 +28,7 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 	ck.servers = servers
 	// You'll have to add code here.
 	ck.ClientID = nrand()
-	ck.seq = 1
+	ck.seq = 0
 	ck.leaderId = 0
 	return ck
 }
@@ -55,7 +55,6 @@ func (ck *Clerk) Get(key string) string {
 		ck.servers[i].Call("KVServer.Get", &args, &reply)
 		if reply.Err == OK {
 			ck.leaderId = i
-			ck.seq++
 			break
 		} else if reply.Err == ErrWrongLeader {
 			continue
@@ -77,6 +76,7 @@ func (ck *Clerk) Get(key string) string {
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
+	ck.seq++
 	args := PutAppendArgs{Key: key, Value: value, ClientID: ck.ClientID, Seq: ck.seq}
 	reply := PutAppendReply{}
 	len := len(ck.servers)
@@ -84,7 +84,6 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		ck.servers[i].Call("KVServer."+op, &args, &reply)
 		if reply.Err == OK {
 			ck.leaderId = i
-			ck.seq++
 			break
 		} else if reply.Err == ErrWrongLeader {
 			continue
