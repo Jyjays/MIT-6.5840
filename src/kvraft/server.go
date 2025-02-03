@@ -1,6 +1,8 @@
 package kvraft
 
 import (
+	"log"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -133,7 +135,7 @@ func (kv *KVServer) startOp(op Op) (int, bool, int) {
 	case msg := <-ch:
 		kv.closeNotifyCh(index)
 		return index, true, msg
-	case <-time.After(500 * time.Millisecond): // 添加超时处理
+	case <-time.After(100 * time.Millisecond): // 添加超时处理
 		kv.closeNotifyCh(index)
 		return index, true, -1
 	}
@@ -205,6 +207,10 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.persist = persister
 
 	go kv.applier()
-
+	if Output {
+		logfile, _ := os.OpenFile("test.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		// 将日志输出重定向到日志文件
+		log.SetOutput(logfile)
+	}
 	return kv
 }

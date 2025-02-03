@@ -1,10 +1,5 @@
 package kvraft
 
-import (
-	"log"
-	"os"
-)
-
 func (kv *KVServer) applyOp(op Op) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
@@ -25,12 +20,7 @@ func (kv *KVServer) applyOp(op Op) {
 }
 
 func (kv *KVServer) applier() {
-	logfile, _ := os.OpenFile("test.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 
-	defer logfile.Close()
-
-	// 将日志输出重定向到日志文件
-	log.SetOutput(logfile)
 	for kv.killed() == false {
 
 		for msg := range kv.applyCh {
@@ -51,4 +41,5 @@ func (kv *KVServer) applier() {
 
 		}
 	}
+
 }

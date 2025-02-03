@@ -92,8 +92,10 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		} else if reply.Err == ErrNoKey {
 			DPrintf("PutAppend:ErrNoKey %v\n", reply)
 			break
+		} else if reply.Err == ErrTimeout {
+			time.Sleep(100 * time.Millisecond)
 		}
-		time.Sleep(100 * time.Millisecond)
+
 	}
 
 }
