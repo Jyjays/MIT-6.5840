@@ -62,6 +62,9 @@ func (ck *Clerk) Get(key string) string {
 		} else if reply.Err == ErrNoKey {
 			//DPrintf("Get: ErrNoKey:%v\n", reply)
 			break
+		} else if reply.Err == ErrTimeout {
+			time.Sleep(100 * time.Millisecond)
+			i = (i + len - 1) % len
 		}
 	}
 	return reply.Value
@@ -94,6 +97,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			break
 		} else if reply.Err == ErrTimeout {
 			time.Sleep(100 * time.Millisecond)
+			i = (i + len - 1) % len
 		}
 
 	}

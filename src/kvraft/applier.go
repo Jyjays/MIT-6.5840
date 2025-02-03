@@ -3,8 +3,8 @@ package kvraft
 func (kv *KVServer) applyOp(op Op) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("Server %v applyOp %v\n", kv.me, op)
-	if kv.checkDuplicate(op.ClientID, op.Seq) {
+	//DPrintf("Server %v applyOp %v\n", kv.me, op)
+	if op.Type == "Get" && kv.checkDuplicate(op.ClientID, op.Seq) {
 		return
 	}
 	// 执行操作

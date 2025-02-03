@@ -102,6 +102,10 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	if !kv.IsLeader() {
+		reply.Err = ErrWrongLeader
+		return
+	}
 	if kv.checkDuplicate(args.ClientID, args.Seq) {
 		reply.Err = OK
 		return
