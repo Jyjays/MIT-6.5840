@@ -14,6 +14,13 @@ type Reply interface {
 	GetErr() Err
 }
 
+type ReplyContext struct {
+	Seq   int
+	Type  string
+	Err   Err
+	Value string
+}
+
 // Put or Append
 type PutAppendArgs struct {
 	Key   string

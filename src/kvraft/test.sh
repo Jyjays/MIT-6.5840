@@ -1,1 +1,1 @@
-python3 dstest.py --iter 50 --workers 10 --output out.log 4A
+python3 dstest.py --iter 50 --workers 10 --output out.log  TestPersistOneClient4A

@@ -52,6 +52,7 @@ type ApplyMsg struct {
 	CommandValid bool
 	Command      interface{}
 	CommandIndex int
+	CurrentTerm  int
 
 	// For 3D:
 	SnapshotValid bool
@@ -235,6 +236,7 @@ func (rf *Raft) applier() {
 				CommandValid: true,
 				Command:      entry.Command,
 				CommandIndex: entry.Index,
+				CurrentTerm:  entry.Term,
 			}
 		}
 		rf.mu.Lock()

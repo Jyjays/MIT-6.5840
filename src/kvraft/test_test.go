@@ -3,6 +3,7 @@ package kvraft
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -49,7 +50,9 @@ var t0 = time.Now()
 // get/put/putappend that keep counts
 func Get(cfg *config, ck *Clerk, key string, log *OpLog, cli int) string {
 	start := int64(time.Since(t0))
+	DPrintf("test: start get %v\n", key)
 	v := ck.Get(key)
+	DPrintf("test: end get %v\n", key)
 	end := int64(time.Since(t0))
 	cfg.op()
 	if log != nil {
@@ -322,14 +325,14 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		}
 
 		if crash {
-			// log.Printf("shutdown servers\n")
+			log.Printf("shutdown servers\n")
 			for i := 0; i < nservers; i++ {
 				cfg.ShutdownServer(i)
 			}
 			// Wait for a while for servers to shutdown, since
 			// shutdown isn't a real crash and isn't instantaneous
 			time.Sleep(electionTimeout)
-			// log.Printf("restart servers\n")
+			log.Printf("restart servers\n")
 			// crash and re-start all
 			for i := 0; i < nservers; i++ {
 				cfg.StartServer(i)

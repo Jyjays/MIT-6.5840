@@ -29,12 +29,12 @@ type KVServer struct {
 
 	maxraftstate int // snapshot if log grows this big
 	//REVIEW - lastApplied shouldn't be in the server
-	lastApplied int               // 最后一个已经应用到状态机的日志索引
-	kvData      map[string]string // 键值存储
+	lastApplied  int // 最后一个已经应用到状态机的日志索引
+	stateMachine *kvStateMachine
 	//cache       map[int64]string
-	clientSeq map[int64]int    // 记录客户端最大序列号
-	notifyMap map[int]chan int // 通知通道
-	persist   *raft.Persister  // 持久化存储（Part B 使用）
+	lastOperation map[int64]ReplyContext
+	notifyMap     map[int]chan *NotifychMsg
+	persist       *raft.Persister // 持久化存储（Part B 使用）
 }
 
 func (kv *KVServer) IsLeader() bool {
@@ -44,31 +44,30 @@ func (kv *KVServer) IsLeader() bool {
 
 func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Your code here.
+
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	if !kv.IsLeader() {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	if value, ok := kv.kvData[args.Key]; ok {
-
-		oper := Op{
+	if !kv.stateMachine.hasKey(args.Key) {
+		reply.Err = ErrNoKey
+		return
+	} else {
+		op := Op{
 			Type:     "Get",
 			Key:      args.Key,
-			Value:    value,
 			ClientID: args.ClientID,
 			Seq:      args.Seq,
 		}
 		kv.mu.Unlock()
-		index, flag, msg := kv.startOp(oper)
+		index, flag, msg := kv.startOp(op)
 		kv.mu.Lock()
-
 		if !checkMsg(index, flag, msg, reply) {
 			return
 		}
-		reply.Value = value
-	} else {
-		reply.Err = ErrNoKey
+		reply.Value = msg.Value
 	}
 }
 
@@ -125,47 +124,23 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 }
 
-func (kv *KVServer) startOp(op Op) (int, bool, int) {
+func (kv *KVServer) startOp(op Op) (int, bool, *NotifychMsg) {
 	index, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
-		return index, false, -1
+		return index, false, nil
 	}
-
-	// 加锁保护 notifyMap
-	ch := kv.getNotifyCh(index)
+	ch := kv.getNotifyChMsg(index)
 
 	// 等待结果或超时
 	select {
 	case msg := <-ch:
-		kv.closeNotifyCh(index)
+		kv.closeNotifyChMsg(index)
 		return index, true, msg
 	case <-time.After(100 * time.Millisecond): // 添加超时处理
 		DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
-		kv.closeNotifyCh(index)
-		return index, true, -1
+		kv.closeNotifyChMsg(index)
+		return index, true, nil
 	}
-}
-func (kv *KVServer) checkDuplicate(clientId int64, seq int) bool {
-	lastSeq, exists := kv.clientSeq[clientId]
-	if exists && seq <= lastSeq {
-		return true
-	}
-	return false
-	//return seq <= kv.clientSeq[clientId]
-}
-
-func checkMsg(index int, flag bool, msg int, reply Reply) bool {
-	DPrintf("index:%v, flag:%v, msg:%v\n", index, flag, msg)
-	if !flag {
-		reply.SetErr(ErrWrongLeader)
-		return false
-	}
-	if msg != index || msg == -1 {
-		reply.SetErr(ErrTimeout)
-		return false
-	}
-	reply.SetErr(OK)
-	return true
 }
 
 func (kv *KVServer) Kill() {
@@ -207,9 +182,9 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 
-	kv.kvData = make(map[string]string)
-	kv.clientSeq = make(map[int64]int)
-	kv.notifyMap = make(map[int]chan int)
+	kv.stateMachine = newKVStateMachine()
+	kv.lastOperation = make(map[int64]ReplyContext)
+	kv.notifyMap = make(map[int]chan *NotifychMsg)
 	kv.persist = persister
 
 	go kv.applier()

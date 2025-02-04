@@ -49,25 +49,37 @@ func (ck *Clerk) getLeader() int {
 // must match the declared types of the RPC handler function's
 // arguments. and reply must be passed as a pointer.
 func (ck *Clerk) Get(key string) string {
-	args := GetArgs{Key: key}
-	reply := GetReply{}
-	len := len(ck.servers)
-	for i := ck.getLeader(); ; i = (i + 1) % len {
-		ck.servers[i].Call("KVServer.Get", &args, &reply)
+	DPrintf("C calling the GetRPC key is %s", key)
+	// You will have to modify this function.
+	ck.seq++
+	getArgs := GetArgs{
+		Key:      key,
+		ClientID: ck.ClientID,
+		Seq:      ck.seq,
+	}
+	for i := ck.getLeader(); ; i = (i + 1) % len(ck.servers) {
+		reply := GetReply{}
+		ok := ck.servers[i].Call("KVServer.Get", &getArgs, &reply)
+		if !ok {
+			continue
+		}
 		if reply.Err == OK {
+			// DPrintf("Get finish key:%v value:%v\n", key, reply.Value)
 			ck.leaderId = i
-			break
+			return reply.Value
 		} else if reply.Err == ErrWrongLeader {
 			continue
 		} else if reply.Err == ErrNoKey {
-			//DPrintf("Get: ErrNoKey:%v\n", reply)
-			break
+			ck.leaderId = i
+			DPrintf("Get no key key:%v\n", key)
+			return ""
+
 		} else if reply.Err == ErrTimeout {
-			time.Sleep(100 * time.Millisecond)
-			i = (i + len - 1) % len
+			DPrintf("Get timeout key:%v\n", key)
+			i = (i + len(ck.servers) - 1) % len(ck.servers)
+			continue
 		}
 	}
-	return reply.Value
 }
 
 // shared by Put and Append.
@@ -82,10 +94,14 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 	// You will have to modify this function.
 	ck.seq++
 	args := PutAppendArgs{Key: key, Value: value, ClientID: ck.ClientID, Seq: ck.seq}
-	reply := PutAppendReply{}
+
 	len := len(ck.servers)
 	for i := ck.getLeader(); ; i = (i + 1) % len {
-		ck.servers[i].Call("KVServer."+op, &args, &reply)
+		reply := PutAppendReply{}
+		ok := ck.servers[i].Call("KVServer."+op, &args, &reply)
+		if !ok {
+			continue
+		}
 		if reply.Err == OK {
 			DPrintf("PutAppend finish key:%v value:%v\n", key, value)
 			ck.leaderId = i
@@ -93,7 +109,7 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		} else if reply.Err == ErrWrongLeader {
 			continue
 		} else if reply.Err == ErrNoKey {
-			DPrintf("PutAppend:ErrNoKey %v\n", reply)
+			ck.leaderId = i
 			break
 		} else if reply.Err == ErrTimeout {
 			time.Sleep(100 * time.Millisecond)
