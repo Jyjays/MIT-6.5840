@@ -70,10 +70,11 @@ func (ck *Clerk) Get(key string) string {
 		} else if reply.Err == ErrWrongLeader {
 			continue
 		} else if reply.Err == ErrNoKey {
-			ck.leaderId = i
-			DPrintf("Get no key key:%v\n", key)
-			return ""
-
+			// ck.leaderId = i
+			// DPrintf("Get no key key:%v\n", key)
+			// return ""
+			time.Sleep(100 * time.Millisecond)
+			continue
 		} else if reply.Err == ErrTimeout {
 			DPrintf("Get timeout key:%v\n", key)
 			i = (i + len(ck.servers) - 1) % len(ck.servers)

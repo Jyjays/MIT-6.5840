@@ -11,7 +11,7 @@ func (kv *KVServer) getNotifyChMsg(index int) chan *NotifychMsg {
 
 	ch, ok := kv.notifyMap[index]
 	if !ok {
-		ch = make(chan *NotifychMsg, 1)
+		ch = make(chan *NotifychMsg, 2)
 		kv.notifyMap[index] = ch
 	}
 	return ch
@@ -41,6 +41,6 @@ func checkMsg(index int, flag bool, msg *NotifychMsg, reply Reply) bool {
 		reply.SetErr(msg.Err)
 		return false
 	}
-	reply.SetErr(OK)
+	reply.SetErr(msg.Err)
 	return true
 }

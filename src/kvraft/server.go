@@ -51,24 +51,24 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	if !kv.stateMachine.hasKey(args.Key) {
-		reply.Err = ErrNoKey
-		return
-	} else {
-		op := Op{
-			Type:     "Get",
-			Key:      args.Key,
-			ClientID: args.ClientID,
-			Seq:      args.Seq,
-		}
-		kv.mu.Unlock()
-		index, flag, msg := kv.startOp(op)
-		kv.mu.Lock()
-		if !checkMsg(index, flag, msg, reply) {
-			return
-		}
-		reply.Value = msg.Value
+	//REVIEW - 被困住一天的地方
+	// Get操作如果不按照论文的方法实现的话就要严格
+	// 进行Duplicate检查，防止宕机重启后的get操作
+	// 在恢复操作的前面导致找不到key
+	op := Op{
+		Type:     "Get",
+		Key:      args.Key,
+		ClientID: args.ClientID,
+		Seq:      args.Seq,
 	}
+	kv.mu.Unlock()
+	index, flag, msg := kv.startOp(op)
+	kv.mu.Lock()
+	if !checkMsg(index, flag, msg, reply) {
+		return
+	}
+	reply.Value = msg.Value
+
 }
 
 func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
@@ -154,18 +154,6 @@ func (kv *KVServer) killed() bool {
 	return z == 1
 }
 
-// servers[] contains the ports of the set of
-// servers that will cooperate via Raft to
-// form the fault-tolerant key/value service.
-// me is the index of the current server in servers[].
-// the k/v server should store snapshots through the underlying Raft
-// implementation, which should call persister.SaveStateAndSnapshot() to
-// atomically save the Raft state along with the snapshot.
-// the k/v server should snapshot when Raft's saved state exceeds maxraftstate bytes,
-// in order to allow Raft to garbage-collect its log. if maxraftstate is -1,
-// you don't need to snapshot.
-// StartKVServer() must return quickly, so it should start goroutines
-// for any long-running work.
 func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister, maxraftstate int) *KVServer {
 	// call labgob.Register on structures you want
 	// Go's RPC library to marshall/unmarshall.
@@ -186,6 +174,7 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 	kv.lastOperation = make(map[int64]ReplyContext)
 	kv.notifyMap = make(map[int]chan *NotifychMsg)
 	kv.persist = persister
+	//kv.restoreSnapshot(kv.persist.ReadSnapshot())
 
 	go kv.applier()
 	if Output {

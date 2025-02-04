@@ -7,7 +7,7 @@ const (
 	ErrTimeout     = "ErrTimeout"
 )
 
-const timeout = 100
+const timeout = 500
 
 type Err string
 

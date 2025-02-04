@@ -325,18 +325,20 @@ func GenericTest(t *testing.T, part string, nclients int, nservers int, unreliab
 		}
 
 		if crash {
-			log.Printf("shutdown servers\n")
+
 			for i := 0; i < nservers; i++ {
 				cfg.ShutdownServer(i)
 			}
+			log.Printf("shutdown servers\n")
 			// Wait for a while for servers to shutdown, since
 			// shutdown isn't a real crash and isn't instantaneous
 			time.Sleep(electionTimeout)
-			log.Printf("restart servers\n")
+
 			// crash and re-start all
 			for i := 0; i < nservers; i++ {
 				cfg.StartServer(i)
 			}
+			log.Printf("restart servers\n")
 			cfg.ConnectAll()
 		}
 

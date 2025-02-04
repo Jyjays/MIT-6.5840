@@ -78,14 +78,19 @@ func (kv *KVServer) applyLogToStateMachine(op *Op) *NotifychMsg {
 	defer kv.mu.Unlock()
 	switch op.Type {
 	case "Get":
-		reply.Value = kv.stateMachine.get(op.Key)
+		if kv.stateMachine.hasKey(op.Key) {
+			reply.Value = kv.stateMachine.get(op.Key)
+			reply.Err = OK
+		} else {
+			reply.Err = ErrNoKey
+		}
 	case "Put":
 		kv.stateMachine.put(op.Key, op.Value)
+		reply.Err = OK
 	case "Append":
 		kv.stateMachine.append(op.Key, op.Value)
+		reply.Err = OK
 	}
-
-	reply.Err = OK
 
 	return reply
 }
@@ -94,10 +99,7 @@ func (kv *KVServer) notify(index int, reply *NotifychMsg) {
 	ch := kv.getNotifyChMsg(index)
 
 	if ch != nil {
-		select {
-		case <-ch:
-		default:
-		}
+
 		ch <- reply
 	}
 }
