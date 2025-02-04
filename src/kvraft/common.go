@@ -7,6 +7,8 @@ const (
 	ErrTimeout     = "ErrTimeout"
 )
 
+const timeout = 100
+
 type Err string
 
 type Reply interface {

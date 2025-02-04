@@ -136,7 +136,7 @@ func (kv *KVServer) startOp(op Op) (int, bool, *NotifychMsg) {
 	case msg := <-ch:
 		kv.closeNotifyChMsg(index)
 		return index, true, msg
-	case <-time.After(100 * time.Millisecond): // 添加超时处理
+	case <-time.After(timeout * time.Millisecond): // 添加超时处理
 		DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
 		kv.closeNotifyChMsg(index)
 		return index, true, nil
