@@ -140,6 +140,7 @@ func (kv *KVServer) startOp(op Op) (int, bool, int) {
 		kv.closeNotifyCh(index)
 		return index, true, msg
 	case <-time.After(100 * time.Millisecond): // 添加超时处理
+		DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
 		kv.closeNotifyCh(index)
 		return index, true, -1
 	}
@@ -150,6 +151,7 @@ func (kv *KVServer) checkDuplicate(clientId int64, seq int) bool {
 		return true
 	}
 	return false
+	//return seq <= kv.clientSeq[clientId]
 }
 
 func checkMsg(index int, flag bool, msg int, reply Reply) bool {
@@ -158,7 +160,7 @@ func checkMsg(index int, flag bool, msg int, reply Reply) bool {
 		reply.SetErr(ErrWrongLeader)
 		return false
 	}
-	if msg != index {
+	if msg != index || msg == -1 {
 		reply.SetErr(ErrTimeout)
 		return false
 	}
