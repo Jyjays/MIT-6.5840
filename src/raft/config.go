@@ -222,15 +222,17 @@ func (cfg *config) applierSnap(i int, applyCh chan ApplyMsg) {
 	}
 
 	for m := range applyCh {
-		DPrintf("server %v apply %v", i, m)
+		//DPrintf("server %v apply %v", i, m)
 		err_msg := ""
 		if m.SnapshotValid {
 			cfg.mu.Lock()
+			DPrintf("server %v apply snapshot %v", i, m)
 			err_msg = cfg.ingestSnap(i, m.Snapshot, m.SnapshotIndex)
+			DPrintf("server %v lastApplied %v", i, cfg.lastApplied[i])
 			cfg.mu.Unlock()
 		} else if m.CommandValid {
 			if m.CommandIndex != cfg.lastApplied[i]+1 {
-				err_msg = fmt.Sprintf("server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
+				err_msg = fmt.Sprintf("ApplierSnap: server %v apply out of order, expected index %v, got %v", i, cfg.lastApplied[i]+1, m.CommandIndex)
 			}
 
 			if err_msg == "" {

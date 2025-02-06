@@ -16,8 +16,14 @@ func (kv *KVServer) applier() {
 				}
 				kv.kvSnapshot()
 				kv.LastApplied = applyMsg.CommandIndex
-			} else if applyMsg.SnapshotValid {
-				kv.restoreSnapshot(applyMsg.Snapshot)
+			}
+			if applyMsg.SnapshotValid {
+				kv.mu.Lock()
+				if applyMsg.SnapshotIndex > kv.LastApplied {
+					kv.restoreSnapshot(applyMsg.Snapshot)
+					kv.LastApplied = applyMsg.SnapshotIndex
+				}
+				kv.mu.Unlock()
 			}
 		}
 	}

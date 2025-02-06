@@ -7,8 +7,6 @@ import (
 )
 
 func (kv *KVServer) restoreSnapshot(snapshot []byte) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	if snapshot == nil || len(snapshot) < 1 {
 		return
 	}

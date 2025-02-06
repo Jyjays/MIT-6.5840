@@ -19,6 +19,9 @@ package raft
 
 import (
 	"bytes"
+	"log"
+	"os"
+
 	// "log"
 	// "os"
 	"sort"
@@ -149,6 +152,7 @@ func (rf *Raft) readPersist(data []byte) {
 	}
 	rf.currentTerm, rf.voteFor, rf.log = currentTerm, voteFor, log
 	rf.lastApplied, rf.commitIndex = rf.getFirstLog().Index, rf.getFirstLog().Index
+	DPrintf("{Node %v} Lastapplied changed to %v in readPersist\n", rf.me, rf.lastApplied)
 }
 
 // the service says it has created a snapshot that has
@@ -226,6 +230,7 @@ func (rf *Raft) applier() {
 
 		// apply log entries to state machine
 		firstLogIndex, commitIndex, lastApplied := rf.getFirstLog().Index, rf.commitIndex, rf.lastApplied
+		DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
 		entries := make([]LogEntry, commitIndex-lastApplied)
 		copy(entries, rf.log[lastApplied-firstLogIndex+1:commitIndex-firstLogIndex+1])
 		rf.mu.Unlock()
@@ -240,9 +245,9 @@ func (rf *Raft) applier() {
 			}
 		}
 		rf.mu.Lock()
-		//DPrintf("{Node %v} applies log entries from index %v to %v in term %v", rf.me, lastApplied, commitIndex, rf.currentTerm)
 		// use commitIndex rather than rf.commitIndex because rf.commitIndex may change during the Unlock() and Lock()
 		rf.lastApplied = Max(rf.lastApplied, commitIndex)
+		DPrintf("{Node %v} Lastapplied changed to %v in applier\n", rf.me, rf.lastApplied)
 		rf.resetElectionTimer()
 		rf.mu.Unlock()
 	}
@@ -321,12 +326,14 @@ func (rf *Raft) killed() bool {
 }
 
 func (rf *Raft) ticker() {
-	// logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	// if err != nil {
-	// 	log.Fatalf("failed to open log file: %v", err)
-	// }
-	// defer logFile.Close()
-	// log.SetOutput(logFile)
+	if Output {
+		logFile, err := os.OpenFile("debug.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			log.Fatalf("failed to open log file: %v", err)
+		}
+		defer logFile.Close()
+		log.SetOutput(logFile)
+	}
 	for rf.killed() == false {
 		select {
 		case <-rf.electionTimer.C:

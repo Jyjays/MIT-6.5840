@@ -173,16 +173,18 @@ func (rf *Raft) InstallSnapshot(args *InstallSnapshotArgs, reply *InstallSnapsho
 	}
 	rf.log[0].Term, rf.log[0].Index = args.LastIncludedTerm, args.LastIncludedIndex
 	rf.commitIndex, rf.lastApplied = args.LastIncludedIndex, args.LastIncludedIndex
+	DPrintf("{Node %v} Lastapplied changed to %v in InstallSnapshot\n", rf.me, rf.lastApplied)
 	rf.persister.Save(rf.encodeState(), args.Data)
-
-	go func() {
-		rf.applyCh <- ApplyMsg{
-			SnapshotValid: true,
-			Snapshot:      args.Data,
-			SnapshotTerm:  args.LastIncludedTerm,
-			SnapshotIndex: args.LastIncludedIndex,
-		}
-	}()
+	//FIXME - Shouldn's use goroutine here
+	snapmsg := ApplyMsg{
+		SnapshotValid: true,
+		Snapshot:      args.Data,
+		SnapshotTerm:  args.LastIncludedTerm,
+		SnapshotIndex: args.LastIncludedIndex,
+	}
+	rf.mu.Unlock()
+	rf.applyCh <- snapmsg
+	rf.mu.Lock()
 }
 
 // REVIEW - The return value is never used
