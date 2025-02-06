@@ -29,10 +29,10 @@ type KVServer struct {
 
 	maxraftstate int // snapshot if log grows this big
 	//REVIEW - lastApplied shouldn't be in the server
-	lastApplied  int // 最后一个已经应用到状态机的日志索引
-	stateMachine *kvStateMachine
+	LastApplied  int // 最后一个已经应用到状态机的日志索引
+	StateMachine *kvStateMachine
 	//cache       map[int64]string
-	lastOperation map[int64]ReplyContext
+	LastOperation map[int64]ReplyContext
 	notifyMap     map[int]chan *NotifychMsg
 	persist       *raft.Persister // 持久化存储（Part B 使用）
 }
@@ -170,11 +170,11 @@ func StartKVServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persiste
 
 	// You may need initialization code here.
 
-	kv.stateMachine = newKVStateMachine()
-	kv.lastOperation = make(map[int64]ReplyContext)
+	kv.StateMachine = newKVStateMachine()
+	kv.LastOperation = make(map[int64]ReplyContext)
 	kv.notifyMap = make(map[int]chan *NotifychMsg)
 	kv.persist = persister
-	//kv.restoreSnapshot(kv.persist.ReadSnapshot())
+	kv.restoreSnapshot(kv.persist.ReadSnapshot())
 
 	go kv.applier()
 	if Output {

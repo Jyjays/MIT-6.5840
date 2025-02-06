@@ -7,10 +7,11 @@ import (
 )
 
 func (kv *KVServer) restoreSnapshot(snapshot []byte) {
-	if snapshot == nil || len(snapshot) < 1 { // bootstrap without any state?
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if snapshot == nil || len(snapshot) < 1 {
 		return
 	}
-
 	r := bytes.NewBuffer(snapshot)
 	d := labgob.NewDecoder(r)
 
@@ -22,6 +23,25 @@ func (kv *KVServer) restoreSnapshot(snapshot []byte) {
 		panic("decode persist state fail")
 	}
 
-	kv.stateMachine = &stateMachine
-	kv.lastOperation = lastOperation
+	kv.StateMachine = &stateMachine
+	kv.LastOperation = lastOperation
+}
+
+// kvSnapshot has lock
+func (kv *KVServer) kvSnapshot() {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if kv.maxraftstate != -1 && kv.persist.RaftStateSize() > kv.maxraftstate {
+		DPrintf("server {%d} get snapshot index = %d maxraftstate = %d raftStateSize = %d\n", kv.me, kv.LastApplied, kv.maxraftstate, kv.persist.RaftStateSize())
+		kv.rf.Snapshot(kv.LastApplied, kv.kvEncodeState())
+	}
+}
+
+func (kv *KVServer) kvEncodeState() []byte {
+	w := new(bytes.Buffer)
+	e := labgob.NewEncoder(w)
+	e.Encode(kv.StateMachine)
+	e.Encode(kv.LastOperation)
+	data := w.Bytes()
+	return data
 }

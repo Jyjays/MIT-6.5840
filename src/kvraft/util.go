@@ -21,7 +21,7 @@ func Max(a, b int) int {
 	return b
 }
 func (kv *KVServer) checkDuplicate(clientId int64, seq int) bool {
-	lastOperation, ok := kv.lastOperation[clientId]
+	lastOperation, ok := kv.LastOperation[clientId]
 	if ok && lastOperation.Seq >= seq {
 		return true
 	}
