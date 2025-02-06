@@ -9,7 +9,7 @@ import (
 )
 
 // Debugging
-const Debug = true
+const Debug = false
 const Output = false
 
 func currentTime() string {
