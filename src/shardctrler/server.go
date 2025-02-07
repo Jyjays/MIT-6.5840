@@ -1,11 +1,12 @@
 package shardctrler
 
+import (
+	"sync"
 
-import "6.5840/raft"
-import "6.5840/labrpc"
-import "sync"
-import "6.5840/labgob"
-
+	"6.5840/labgob"
+	"6.5840/labrpc"
+	"6.5840/raft"
+)
 
 type ShardCtrler struct {
 	mu      sync.Mutex
@@ -13,16 +14,14 @@ type ShardCtrler struct {
 	rf      *raft.Raft
 	applyCh chan raft.ApplyMsg
 
-	// Your data here.
+	stateMachine *StateMachine
 
 	configs []Config // indexed by config num
 }
 
-
 type Op struct {
 	// Your data here.
 }
-
 
 func (sc *ShardCtrler) Join(args *JoinArgs, reply *JoinReply) {
 	// Your code here.
@@ -39,7 +38,6 @@ func (sc *ShardCtrler) Move(args *MoveArgs, reply *MoveReply) {
 func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 	// Your code here.
 }
-
 
 // the tester calls Kill() when a ShardCtrler instance won't
 // be needed again. you are not required to do anything
