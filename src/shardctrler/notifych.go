@@ -1,21 +1,29 @@
 package shardctrler
 
 type NotifychMsg struct {
-	Err   Err
-	Value string
+	Err    Err
+	Config Config
 }
 
 func (sc *ShardCtrler) getNotifyChMsg(index int) chan *NotifychMsg {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 
-	return sc.notifyMap[index]
+	ch, ok := sc.notifyMap[index]
+	if !ok {
+		ch = make(chan *NotifychMsg, 2)
+		sc.notifyMap[index] = ch
+	}
+	return ch
 }
 
 func (sc *ShardCtrler) closeNotifyChMsg(index int) {
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
 
-}
-
-func checkMsg(index int, flag bool, msg *NotifychMsg, reply Reply) bool {
-	return true
+	ch, ok := sc.notifyMap[index]
+	if ok {
+		close(ch)
+		delete(sc.notifyMap, index)
+	}
 }
