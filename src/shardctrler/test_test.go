@@ -87,7 +87,7 @@ func TestBasic(t *testing.T) {
 	cfa := make([]Config, 6)
 	t.Run("LeaveJoin", func(t *testing.T) {
 		fmt.Printf("Test: Basic leave/join ...\n")
-
+		defer DPrintf("Test: Basic leave/join ... end\n")
 		cfa[0] = ck.Query(-1)
 
 		check(t, []int{}, ck)
@@ -139,6 +139,8 @@ func TestBasic(t *testing.T) {
 
 	t.Run("Move", func(t *testing.T) {
 		fmt.Printf("Test: Move ...\n")
+		DPrintf("Test: Move ... start\n")
+		defer DPrintf("Test: Move ... end\n")
 		var gid3 int = 503
 		ck.Join(map[int][]string{gid3: []string{"3a", "3b", "3c"}})
 		var gid4 int = 504
@@ -185,7 +187,8 @@ func TestBasic(t *testing.T) {
 	const npara = 10
 	t.Run("ConcurrentLeaveJoin", func(t *testing.T) {
 		fmt.Printf("Test: Concurrent leave/join ...\n")
-
+		DPrintf("Test: Concurrent leave/join ... start\n")
+		defer DPrintf("Test: Concurrent leave/join ... end\n")
 		var cka [npara]*Clerk
 		for i := 0; i < len(cka); i++ {
 			cka[i] = cfg.makeClient(cfg.All())
@@ -267,7 +270,8 @@ func TestMinimalAgain(t *testing.T) {
 	ck := cfg.makeClient(cfg.All())
 
 	fmt.Printf("Test: minimal movement again ...\n")
-
+	DPrintf("Test: minimal movement again ... start\n")
+	defer DPrintf("Test: minimal movement again ... end\n")
 	ck.Join(map[int][]string{1: []string{"x", "y", "z"}})
 
 	ck.Join(map[int][]string{2: []string{"a", "b", "c"}})
@@ -278,7 +282,7 @@ func TestMinimalAgain(t *testing.T) {
 
 	c2 := ck.Query(-1)
 
-	// fmt.Printf("after join(3):\n%v\n%v\n", c1.Shards, c2.Shards)
+	fmt.Printf("after join(3):\n%v\n%v\n", c1.Shards, c2.Shards)
 
 	// any shard that wasn't moved to gid 3 should
 	// stay where it was.
@@ -304,7 +308,7 @@ func TestMinimalAgain(t *testing.T) {
 	// now gid 1 leaves.
 	ck.Leave([]int{1})
 	c3 := ck.Query(-1)
-	// fmt.Printf("after leave(1):\n%v\n%v\n", c2.Shards, c3.Shards)
+	fmt.Printf("after leave(1):\n%v\n%v\n", c2.Shards, c3.Shards)
 
 	// any shard that wasn't in gid 1 should
 	// stay where it was.

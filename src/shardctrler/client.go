@@ -38,7 +38,12 @@ func MakeClerk(servers []*labrpc.ClientEnd) *Clerk {
 }
 
 func (ck *Clerk) Query(num int) Config {
-	args := &QueryArgs{}
+	ck.seq++
+	args := &QueryArgs{
+		Num:      num,
+		ClientID: ck.clientId,
+		Seq:      ck.seq,
+	}
 	// Your code here.
 	args.Num = num
 	for {
@@ -56,8 +61,12 @@ func (ck *Clerk) Query(num int) Config {
 }
 
 func (ck *Clerk) Join(servers map[int][]string) {
-	args := &JoinArgs{}
-	// Your code here.
+	ck.seq++
+	args := &JoinArgs{
+		Servers:  servers,
+		ClientID: ck.clientId,
+		Seq:      ck.seq,
+	}
 	args.Servers = servers
 
 	for {
@@ -75,8 +84,12 @@ func (ck *Clerk) Join(servers map[int][]string) {
 }
 
 func (ck *Clerk) Leave(gids []int) {
-	args := &LeaveArgs{}
-	// Your code here.
+	ck.seq++
+	args := &LeaveArgs{
+		GIDs:     gids,
+		ClientID: ck.clientId,
+		Seq:      ck.seq,
+	}
 	args.GIDs = gids
 
 	for {
@@ -94,8 +107,13 @@ func (ck *Clerk) Leave(gids []int) {
 }
 
 func (ck *Clerk) Move(shard int, gid int) {
-	args := &MoveArgs{}
-	// Your code here.
+	ck.seq++
+	args := &MoveArgs{
+		Shard:    shard,
+		GID:      gid,
+		ClientID: ck.clientId,
+		Seq:      ck.seq,
+	}
 	args.Shard = shard
 	args.GID = gid
 

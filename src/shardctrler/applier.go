@@ -7,6 +7,7 @@ func (sc *ShardCtrler) applier() {
 			if applyMsg.CommandValid {
 				reply := sc.apply(applyMsg.Command)
 				currentTerm, isLeader := sc.rf.GetState()
+
 				if isLeader && applyMsg.CurrentTerm == currentTerm {
 					sc.notify(applyMsg.CommandIndex, reply)
 				}
@@ -17,11 +18,11 @@ func (sc *ShardCtrler) applier() {
 func (sc *ShardCtrler) apply(cmd interface{}) *NotifychMsg {
 	reply := &NotifychMsg{}
 	op := cmd.(Op)
-	DPrintf("{Server %d} apply command = %v\n", sc.me, op)
 	if op.Type != "Query" && sc.checkDuplicate(op.ClientID, op.Seq) {
 		reply.Err = OK
 	} else {
 		reply = sc.applyLogToStateMachine(&op)
+		DPrintf("{Server %d} apply op = %v, reply = %v\n", sc.me, op, reply)
 		if op.Type != "Query" {
 			sc.updateLastOperation(&op, reply)
 		}
@@ -74,16 +75,15 @@ func (sc *ShardCtrler) updateLastOperation(op *Op, reply *NotifychMsg) {
 }
 
 func (sc *ShardCtrler) joinHandler(op *Op) *NotifychMsg {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
 	lastConfig := sc.configs[len(sc.configs)-1]
 	newGroups := addMap(lastConfig.Groups, op.Servers)
-	newShards := greedyRebalance(lastConfig.Shards, newGroups)
+	newShards := greedyRebalance(lastConfig.Shards, newGroups, true)
 	newConfig := Config{
 		Num:    lastConfig.Num + 1,
 		Shards: newShards,
 		Groups: newGroups,
 	}
+	sc.configs = append(sc.configs, newConfig)
 	return &NotifychMsg{
 		Err:    OK,
 		Config: newConfig,
@@ -91,13 +91,51 @@ func (sc *ShardCtrler) joinHandler(op *Op) *NotifychMsg {
 }
 
 func (sc *ShardCtrler) leaveHandler(op *Op) *NotifychMsg {
-	return nil
+	lastConfig := sc.configs[len(sc.configs)-1]
+	newGroups := removeMap(lastConfig.Groups, op.GIDs)
+	newShards := greedyRebalance(lastConfig.Shards, newGroups, false)
+	newConfig := Config{
+		Num:    lastConfig.Num + 1,
+		Shards: newShards,
+		Groups: newGroups,
+	}
+	sc.configs = append(sc.configs, newConfig)
+	return &NotifychMsg{
+		Err:    OK,
+		Config: newConfig,
+	}
+
 }
 
 func (sc *ShardCtrler) moveHandler(op *Op) *NotifychMsg {
-	return nil
+	lastConfig := sc.configs[len(sc.configs)-1]
+	newShards := moveShard(lastConfig.Shards, op.Shard, op.GID)
+	// move the original shard to the new shard
+	newConfig := Config{
+		Num:    lastConfig.Num + 1,
+		Shards: newShards,
+		Groups: lastConfig.Groups,
+	}
+	sc.configs = append(sc.configs, newConfig)
+	return &NotifychMsg{
+		Err:    OK,
+		Config: newConfig,
+	}
 }
 
 func (sc *ShardCtrler) queryHandler(op *Op) *NotifychMsg {
-	return nil
+	// 使用具有该编号的配置进行回复
+	// Query（-1） 的结果应反映分片控制器在收到 Query（-1） RPC 之前完成处理的每个 Join、Leave 或 Move RPC。
+	// 大于已知最大配置编号，则 shardctrler 应回复最新配置
+	if op.Num == -1 || op.Num >= len(sc.configs) {
+		return &NotifychMsg{
+			Err:    OK,
+			Config: sc.configs[len(sc.configs)-1],
+		}
+	} else {
+		return &NotifychMsg{
+			Err:    OK,
+			Config: sc.configs[op.Num],
+		}
+	}
 }

@@ -3,12 +3,14 @@ package shardctrler
 import "log"
 
 const timeout = 1000
-const debug = false
+const Debug = false
+const Output = false
 
-func DPrintf(format string, a ...interface{}) {
-	if debug {
+func DPrintf(format string, a ...interface{}) (n int, err error) {
+	if Debug {
 		log.Printf(format, a...)
 	}
+	return
 }
 
 func (sc *ShardCtrler) checkDuplicate(clientId int64, seq int) bool {

@@ -1,6 +1,8 @@
 package shardctrler
 
 import (
+	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -138,6 +140,12 @@ func (sc *ShardCtrler) Raft() *raft.Raft {
 // form the fault-tolerant shardctrler service.
 // me is the index of the current server in servers[].
 func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister) *ShardCtrler {
+	if Output {
+		logfile, _ := os.OpenFile("test.log", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		// 将日志输出重定向到日志文件
+		log.SetOutput(logfile)
+	}
+	DPrintf("Server %v start\n", me)
 	sc := new(ShardCtrler)
 	sc.me = me
 

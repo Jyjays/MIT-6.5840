@@ -60,13 +60,21 @@ func addMap(original map[int][]string, servers map[int][]string) map[int][]strin
 	return newMap
 }
 
+func removeMap(original map[int][]string, gids []int) map[int][]string {
+	newMap := copyMap(original)
+	for _, gid := range gids {
+		delete(newMap, gid)
+	}
+	return newMap
+}
+
 // 贪心策略： 每次都将最多的shard分配给最少的group，直到所有group的shard数目平均或相差1
 // 1. 计算每个group的shard数目
 // 2. 计算每个group的shard数目的平均值
 // 3. 计算每个group的shard数目与平均值的差值
 // 4. 将差值最大的shard分配给差值最小的group
 // 5. 重复3-4直到所有group的shard数目平均或相差1
-func greedyRebalance(shards [NShards]int, groups map[int][]string) [NShards]int {
+func greedyRebalance(shards [NShards]int, groups map[int][]string, isJoin bool) [NShards]int {
 	// 如果没有可用组，则所有分片设为 0
 	if len(groups) == 0 {
 		var newShards [NShards]int
@@ -99,12 +107,37 @@ func greedyRebalance(shards [NShards]int, groups map[int][]string) [NShards]int 
 		unassigned = append(unassigned, i)
 	}
 
+	if !isJoin {
+		// 对于 Leave 操作，unassigned 中的分片就是原来分配给离开组的分片。
+		// 对每个未分配的分片，找出当前拥有分片最少的组（从 gids 中遍历）并将该分片分配给它。
+		for _, shardIdx := range unassigned {
+			minGid := 0
+			minCount := 1<<31 - 1 // 一个很大的初始值
+			for _, gid := range gids {
+				count := len(g2shards[gid])
+				if count < minCount {
+					minCount = count
+					minGid = gid
+				}
+			}
+			g2shards[minGid] = append(g2shards[minGid], shardIdx)
+		}
+		// 直接构造新的 shards 数组并返回，不再对已分配的分片进行调换，
+		// 这样可以保证那些原本不属于离开组的分片保持不变。
+		var newShards [NShards]int
+		for _, gid := range gids {
+			for _, shardIdx := range g2shards[gid] {
+				newShards[shardIdx] = gid
+			}
+		}
+		return newShards
+	}
+
 	// 将未分配的分片轮询分配给所有组
 	for i, shardIdx := range unassigned {
 		gid := gids[i%len(gids)]
 		g2shards[gid] = append(g2shards[gid], shardIdx)
 	}
-
 	// 贪心平衡：不断将 max 组中一个分片转移到 min 组，直到两者差距不超过 1
 	for {
 		maxGid, maxCount := 0, -1
@@ -142,6 +175,19 @@ func greedyRebalance(shards [NShards]int, groups map[int][]string) [NShards]int 
 		}
 	}
 
+	return newShards
+}
+
+func moveShard(shards [NShards]int, shard int, gid int) [NShards]int {
+	var newShards [NShards]int
+	copy(newShards[:], shards[:])
+	//find the original place of the shard first
+	// for i := 0; i < NShards; i++ {
+	// 	if shards[i] == gid {
+	// 		newShards[i] = 0
+	// 	}
+	// }
+	newShards[shard] = gid
 	return newShards
 }
 
