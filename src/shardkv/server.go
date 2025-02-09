@@ -1,17 +1,21 @@
 package shardkv
 
+import (
+	"sync"
+	"time"
 
-import "6.5840/labrpc"
-import "6.5840/raft"
-import "sync"
-import "6.5840/labgob"
-
-
+	"6.5840/labgob"
+	"6.5840/labrpc"
+	"6.5840/raft"
+	"6.5840/shardctrler"
+)
 
 type Op struct {
-	// Your definitions here.
-	// Field names must start with capital letters,
-	// otherwise RPC will break.
+	Type     string // "Get", "Put", "Append"
+	Key      string
+	Value    string
+	ClientID int64 // 唯一标识客户端
+	Seq      int   // 客户端分配的递增序列号
 }
 
 type ShardKV struct {
@@ -23,17 +27,45 @@ type ShardKV struct {
 	gid          int
 	ctrlers      []*labrpc.ClientEnd
 	maxraftstate int // snapshot if log grows this big
-
+	mck          *shardctrler.Clerk
 	// Your definitions here.
+	lastApplied   int
+	stateMachine  *StateMachine
+	lastOperation map[int64]ReplyContext
+	notifyMap     map[int]chan *NotifychMsg
+	persist       *raft.Persister // 持久化存储
 }
 
-
 func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
-	// Your code here.
+	op := Op{
+		Type:     "Get",
+		Key:      args.Key,
+		ClientID: args.ClientID,
+		Seq:      args.Seq,
+	}
+	msg := kv.startOp(op)
+	if msg.Err == OK {
+		reply.Err = OK
+		reply.Value = msg.Value
+	} else {
+		reply.Err = msg.Err
+	}
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	// Your code here.
+	op := Op{
+		Type:     args.Op,
+		Key:      args.Key,
+		Value:    args.Value,
+		ClientID: args.ClientID,
+		Seq:      args.Seq,
+	}
+	msg := kv.startOp(op)
+	if msg.Err == OK {
+		reply.Err = OK
+	} else {
+		reply.Err = msg.Err
+	}
 }
 
 // the tester calls Kill() when a ShardKV instance won't
@@ -45,6 +77,23 @@ func (kv *ShardKV) Kill() {
 	// Your code here, if desired.
 }
 
+func (sc *ShardKV) startOp(op Op) *NotifychMsg {
+	index, _, isLeader := sc.rf.Start(op)
+	if !isLeader {
+		return &NotifychMsg{Err: ErrWrongLeader}
+	}
+	ch := sc.getNotifyChMsg(index)
+	var msg *NotifychMsg = nil
+	select {
+	case msg = <-ch:
+		sc.closeNotifyChMsg(index)
+
+	case <-time.After(timeout * time.Millisecond): // 添加超时处理
+		DPrintf("Server %v startOp timeout index:%v\n", sc.me, index)
+		sc.closeNotifyChMsg(index)
+	}
+	return msg
+}
 
 // servers[] contains the ports of the servers in this group.
 //
@@ -87,11 +136,11 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	// Your initialization code here.
 
 	// Use something like this to talk to the shardctrler:
-	// kv.mck = shardctrler.MakeClerk(kv.ctrlers)
+	kv.mck = shardctrler.MakeClerk(kv.ctrlers)
 
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
-
+	go kv.applier()
 
 	return kv
 }

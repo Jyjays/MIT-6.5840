@@ -8,6 +8,7 @@ package shardkv
 //
 // You will have to modify these definitions.
 //
+const timeout = 1000
 
 const (
 	OK             = "OK"
@@ -27,6 +28,8 @@ type PutAppendArgs struct {
 	// You'll have to add definitions here.
 	// Field names must start with capital letters,
 	// otherwise RPC will break.
+	Seq      int
+	ClientID int64
 }
 
 type PutAppendReply struct {
@@ -34,11 +37,17 @@ type PutAppendReply struct {
 }
 
 type GetArgs struct {
-	Key string
-	// You'll have to add definitions here.
+	Key      string
+	Seq      int
+	ClientID int64
 }
 
 type GetReply struct {
 	Err   Err
 	Value string
+}
+type ReplyContext struct {
+	Seq  int
+	Type string
+	Err  Err
 }
