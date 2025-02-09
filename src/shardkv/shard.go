@@ -3,20 +3,20 @@ package shardkv
 type ShardState int
 
 const (
-	Serving   ShardState = iota // 当前分片正常服务中
-	Pulling                     // 当前分片正在从其他复制组中拉取
-	BePulling                   // 当前分片正在复制给其他复制组
-	GCing                       // 当前分片正在等待清除（监视器检测到之后需要从拥有这个分片的复制组中删除分片）
+	Serving ShardState = iota // 当前分片正常服务中
+	Pulling                   // 当前分片正在从其他复制组中拉取
+	Sending                   // 当前分片正在复制给其他复制组
+	GCing                     // 当前分片正在等待清除（监视器检测到之后需要从拥有这个分片的复制组中删除分片）
 )
 
 func (s *ShardState) String() string {
 	switch *s {
 	case Serving:
-		return "NotReady"
+		return "Serving"
 	case Pulling:
-		return "Ready"
-	case BePulling:
-		return "Migrating"
+		return "Pulling"
+	case Sending:
+		return "Sending"
 	case GCing:
 		return "GCing"
 	}

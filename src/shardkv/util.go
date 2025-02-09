@@ -1,11 +1,13 @@
 package shardkv
 
+import "log"
+
 const Debug = true
 const Output = true
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {
-		n, err = DPrintf(format, a...)
+		log.Printf(format, a...)
 	}
 	return
 }

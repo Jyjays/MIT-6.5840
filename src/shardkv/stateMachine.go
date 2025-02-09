@@ -5,7 +5,14 @@ type StateMachine struct {
 }
 
 func (kv *StateMachine) insertShard(sid int, shard *Shard) {
+	//REVIEW - 应该深拷贝
 	kv.Shards[sid] = shard
+}
+
+func (kv *StateMachine) insertShards(shards map[int]*Shard) {
+	for sid, shard := range shards {
+		kv.insertShard(sid, shard)
+	}
 }
 
 func (kv *StateMachine) getShard(sid int) *Shard {
@@ -16,7 +23,14 @@ func (kv *StateMachine) deleteShard(sid int) {
 	delete(kv.Shards, sid)
 }
 
-func (kv *StateMachine) apply(sid int, op Op) (ShardState, string) {
+func (kv *StateMachine) deleteShards(sids []int) {
+	for _, sid := range sids {
+		kv.deleteShard(sid)
+	}
+}
+
+func (kv *StateMachine) apply(op Op) (ShardState, string) {
+	sid := key2shard(op.Key)
 	shard := kv.getShard(sid)
 	if shard == nil {
 		shard = newShard()
@@ -31,8 +45,17 @@ func (kv *StateMachine) apply(sid int, op Op) (ShardState, string) {
 	return shard.State, ""
 }
 
-func newKVStateMachine() *StateMachine {
+func newStateMachine() *StateMachine {
 	return &StateMachine{
 		Shards: make(map[int]*Shard),
 	}
+}
+
+func (kv *StateMachine) setShardState(sid int, state ShardState) {
+	shard := kv.getShard(sid)
+	if shard == nil {
+		shard = newShard()
+		kv.insertShard(sid, shard)
+	}
+	shard.setShardState(state)
 }

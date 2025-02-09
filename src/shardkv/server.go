@@ -1,6 +1,8 @@
 package shardkv
 
 import (
+	"log"
+	"os"
 	"sync"
 	"time"
 
@@ -29,6 +31,8 @@ type ShardKV struct {
 	maxraftstate int // snapshot if log grows this big
 	mck          *shardctrler.Clerk
 	// Your definitions here.
+	currentConfig shardctrler.Config
+	lastConfig    shardctrler.Config
 	lastApplied   int
 	stateMachine  *StateMachine
 	lastOperation map[int64]ReplyContext
@@ -60,6 +64,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 		ClientID: args.ClientID,
 		Seq:      args.Seq,
 	}
+
 	msg := kv.startOp(op)
 	if msg.Err == OK {
 		reply.Err = OK
@@ -77,20 +82,29 @@ func (kv *ShardKV) Kill() {
 	// Your code here, if desired.
 }
 
-func (sc *ShardKV) startOp(op Op) *NotifychMsg {
-	index, _, isLeader := sc.rf.Start(op)
+func (kv *ShardKV) startOp(op Op) *NotifychMsg {
+	DPrintf("Server %v startOp op:%v\n", kv.me, op)
+	var msg *NotifychMsg = nil
+	defer DPrintf("Startop msg: %v", msg)
+	sid := key2shard(op.Key)
+	if !kv.shardCanServe(sid) {
+		msg = &NotifychMsg{}
+		msg.Err = ErrWrongGroup
+		return msg
+	}
+
+	index, _, isLeader := kv.rf.Start(op)
 	if !isLeader {
 		return &NotifychMsg{Err: ErrWrongLeader}
 	}
-	ch := sc.getNotifyChMsg(index)
-	var msg *NotifychMsg = nil
+	ch := kv.getNotifyChMsg(index)
 	select {
 	case msg = <-ch:
-		sc.closeNotifyChMsg(index)
+		kv.closeNotifyChMsg(index)
 
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
-		DPrintf("Server %v startOp timeout index:%v\n", sc.me, index)
-		sc.closeNotifyChMsg(index)
+		DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
+		kv.closeNotifyChMsg(index)
 	}
 	return msg
 }
@@ -137,10 +151,56 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 
 	// Use something like this to talk to the shardctrler:
 	kv.mck = shardctrler.MakeClerk(kv.ctrlers)
-
+	kv.currentConfig = shardctrler.Config{}
+	kv.lastConfig = shardctrler.Config{}
 	kv.applyCh = make(chan raft.ApplyMsg)
+	kv.stateMachine = newStateMachine()
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	go kv.applier()
-
+	go kv.listenConfig()
+	if Output {
+		file, _ := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
+		log.SetOutput(file)
+	}
 	return kv
+}
+
+func (kv *ShardKV) listenConfig() {
+	for {
+		config := kv.mck.Query(-1)
+		kv.mu.Lock()
+		defer kv.mu.Unlock()
+		if config.Num == kv.currentConfig.Num+1 {
+			kv.applyConfig(config)
+		} else {
+			DPrintf("Server %v listenConfig config.Num:%v, kv.currentConfig.Num:%v\n", kv.me, config.Num, kv.currentConfig.Num)
+			//TODO -
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
+func (kv *ShardKV) updateConfig(config shardctrler.Config) {
+	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
+	for i := 0; i < shardctrler.NShards; i++ {
+		if config.Shards[i] == kv.gid && kv.lastConfig.Shards[i] != kv.gid {
+			if kv.lastConfig.Shards[i] != 0 {
+				kv.stateMachine.setShardState(i, Pulling)
+			}
+		}
+		if config.Shards[i] != kv.gid && kv.lastConfig.Shards[i] == kv.gid {
+			if kv.lastConfig.Shards[i] != 0 {
+				kv.stateMachine.setShardState(i, Sending)
+			}
+		}
+	}
+}
+
+func (kv *ShardKV) shardCanServe(sid int) bool {
+	if shard := kv.stateMachine.getShard(sid); shard != nil {
+		if kv.currentConfig.Shards[sid] == kv.gid && shard.State == Serving {
+			return true
+		}
+	}
+	return false
 }
