@@ -7,6 +7,7 @@ const (
 	Pulling                   // 当前分片正在从其他复制组中拉取
 	Sending                   // 当前分片正在复制给其他复制组
 	GCing                     // 当前分片正在等待清除（监视器检测到之后需要从拥有这个分片的复制组中删除分片）
+	Unknown
 )
 
 func (s *ShardState) String() string {

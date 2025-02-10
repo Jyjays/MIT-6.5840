@@ -1,15 +1,18 @@
 package shardkv
 
-import "6.5840/porcupine"
-import "6.5840/models"
-import "testing"
-import "strconv"
-import "time"
-import "fmt"
-import "sync/atomic"
-import "sync"
-import "math/rand"
-import "io/ioutil"
+import (
+	"fmt"
+	"io/ioutil"
+	"math/rand"
+	"strconv"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"6.5840/models"
+	"6.5840/porcupine"
+)
 
 const linearizabilityCheckTimeout = 1 * time.Second
 
@@ -23,7 +26,8 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 // test static 2-way sharding, without shard movement.
 func TestStaticShards5A(t *testing.T) {
 	fmt.Printf("Test (5A): static shards ...\n")
-
+	DPrintf("Test (5A): static shards ...\n")
+	defer DPrintf("Test (5A): static shards done\n")
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 

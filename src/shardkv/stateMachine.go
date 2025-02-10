@@ -32,9 +32,9 @@ func (kv *StateMachine) deleteShards(sids []int) {
 func (kv *StateMachine) apply(op Op) (ShardState, string) {
 	sid := key2shard(op.Key)
 	shard := kv.getShard(sid)
+
 	if shard == nil {
-		shard = newShard()
-		kv.insertShard(sid, shard)
+		return Unknown, ""
 	}
 	if shard.State == Serving {
 		value, flag := shard.apply(op)

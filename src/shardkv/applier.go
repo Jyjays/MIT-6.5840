@@ -16,34 +16,36 @@ func (kv *ShardKV) applier() {
 				if isLeader && applyMsg.CurrentTerm == currentTerm {
 					kv.notify(applyMsg.CommandIndex, reply)
 				}
-				kv.kvSnapshot()
+				//kv.kvSnapshot()
 				kv.lastApplied = applyMsg.CommandIndex
 			}
-			if applyMsg.SnapshotValid {
-				kv.mu.Lock()
-				if applyMsg.SnapshotIndex > kv.lastApplied {
-					kv.restoreSnapshot(applyMsg.Snapshot)
-					kv.lastApplied = applyMsg.SnapshotIndex
-				}
-				kv.mu.Unlock()
-			}
+			// if applyMsg.SnapshotValid {
+			// 	kv.mu.Lock()
+			// 	if applyMsg.SnapshotIndex > kv.lastApplied {
+			// 		kv.restoreSnapshot(applyMsg.Snapshot)
+			// 		kv.lastApplied = applyMsg.SnapshotIndex
+			// 	}
+			// 	kv.mu.Unlock()
+			// }
 		}
 	}
 }
 func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 	reply := &NotifychMsg{}
-	op := cmd.(Command)
-	switch op.Type {
+	command := cmd.(Command)
+	DPrintf("{Server %d} apply command %v", kv.me, command)
+	switch command.Type {
 	case Operation:
-		reply = kv.applyLogToStateMachine(op.Data.(*Op))
-		kv.updateLastOperation(op.Data.(*Op), reply)
+		op := command.Data.(Op)
+		reply = kv.applyLogToStateMachine(&op)
+		kv.updateLastOperation(&op, reply)
 	case AddConfig:
-		cfg := op.Data.(shardctrler.Config)
+		cfg := command.Data.(shardctrler.Config)
 		reply = kv.applyConfig(cfg)
 	case InsertShard:
-		reply = kv.applyInsertShard(op.Data.(GetShardReply))
+		reply = kv.applyInsertShard(command.Data.(GetShardReply))
 	case DeleteShard:
-		reply = kv.applyDeleteShard(op.Data.(DeleteShardArgs))
+		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
 	}
 	reply.Err = OK
 	return reply
@@ -53,6 +55,11 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	var reply = &NotifychMsg{}
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	sid := key2shard(op.Key)
+	if !kv.shardCanServe(sid) {
+		reply.Err = ErrWrongGroup
+		return reply
+	}
 	state, value := kv.stateMachine.apply(*op)
 	reply.Value = value
 	if state == Serving {
@@ -90,14 +97,13 @@ func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
+	DPrintf("{Server %d} apply config %v", kv.me, config)
 	if config.Num <= kv.currentConfig.Num {
 		reply.Err = OK
 		return reply
 	}
-	kv.lastConfig = kv.currentConfig
-	kv.currentConfig = config
 	// 更新状态机
-	kv.updateConfig(kv.currentConfig)
+	kv.processNewConfig(config)
 	reply.Err = OK
 	return reply
 }

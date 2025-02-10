@@ -12,7 +12,7 @@ func (kv *ShardKV) getNotifyChMsg(index int) chan *NotifychMsg {
 
 	ch, ok := kv.notifyMap[index]
 	if !ok {
-		ch = make(chan *NotifychMsg, 2)
+		ch = make(chan *NotifychMsg, 1)
 		kv.notifyMap[index] = ch
 	}
 	return ch
