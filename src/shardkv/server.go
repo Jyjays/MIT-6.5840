@@ -50,6 +50,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	cmd := NewOperationCommand(&op)
 
 	msg := kv.startCmd(cmd)
+	DPrintf("Server %v Get %v\n", kv.me, msg)
 	if msg.Err == OK {
 		reply.Err = OK
 		reply.Value = msg.Value
@@ -75,6 +76,15 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 }
 
+func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
+	//FIXME - DPrintf("Server %v GetShard %v\n", kv.me, args)
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	if args.ConfigNum < kv.currentConfig.Num {
+		reply.Err = ErrWrongGroup
+	}
+}
+
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
 // in Kill(), but it might be convenient to (for example)
@@ -84,13 +94,36 @@ func (kv *ShardKV) Kill() {
 	// Your code here, if desired.
 }
 
+// func (kv *ShardKV) listenConfig() {
+// 	for {
+// 		_, isleader := kv.rf.GetState()
+
+// 		if isleader {
+// 			//TODO - use the state of shards to decide the config query
+// 			config := kv.mck.Query(-1)
+// 			kv.mu.Lock()
+// 			currentNum := kv.currentConfig.Num
+// 			kv.mu.Unlock()
+
+// 			if config.Num == currentNum+1 {
+// 				DPrintf("Server %v listenConfig %v\n", kv.me, config)
+// 				cmd := NewConfigCommand(&config)
+// 				kv.startCmd(cmd)
+// 			}
+// 		}
+// 		time.Sleep(100 * time.Millisecond)
+
+// 	}
+// }
+
 func (kv *ShardKV) listenConfig() {
 	for {
-		config := kv.mck.Query(-1)
+
 		kv.mu.Lock()
 		currentNum := kv.currentConfig.Num
 		kv.mu.Unlock()
-		if config.Num >= currentNum+1 {
+		config := kv.mck.Query(currentNum + 1)
+		if config.Num == currentNum+1 {
 			cmd := NewConfigCommand(&config)
 			kv.startCmd(cmd)
 		} else {
@@ -103,7 +136,7 @@ func (kv *ShardKV) listenConfig() {
 func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
 	// toBeInsertedShards := make(map[int]*Shard)
-	DPrintf("Server %v processNewConfig %v\n", kv.me, config)
+	DPrintf("Server %v processNewConfig %v currentNum %v \n", kv.me, config, kv.currentConfig.Num)
 	oldShards := kv.currentConfig.Shards
 	newShards := config.Shards
 	// 持有者 -> 要拉取的shards
@@ -149,22 +182,22 @@ func (kv *ShardKV) shardCanServe(sid int) bool {
 }
 
 func (kv *ShardKV) startCmd(cmd interface{}) *NotifychMsg {
-	DPrintf("Server %v StartCmd %v ", kv.me, cmd)
+	//FIXME - DPrintf("Server %v StartCmd %v ", kv.me, cmd)
 	var msg *NotifychMsg = nil
 	index, _, isLeader := kv.rf.Start(cmd)
 	if !isLeader {
 		msg := &NotifychMsg{}
 		msg.Err = ErrWrongLeader
-		DPrintf("Server %v StartCmd %v ErrWrongLeader", kv.me, cmd)
+		//DPrintf("Server %v StartCmd %v ErrWrongLeader", kv.me, cmd)
 		return msg
 	}
 	ch := kv.getNotifyChMsg(index)
 	select {
 	case msg = <-ch:
 		kv.closeNotifyChMsg(index)
-		DPrintf("Server %v msg:%v\n", kv.me, msg)
+		//DPrintf("Server %v msg:%v\n", kv.me, msg)
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
-		DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
+		//DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
 		kv.closeNotifyChMsg(index)
 	}
 	return msg
@@ -218,9 +251,11 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.lastConfig = shardctrler.Config{}
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.stateMachine = newStateMachine()
+	kv.lastApplied = 0
 	kv.notifyMap = make(map[int]chan *NotifychMsg)
 	kv.lastOperation = make(map[int64]ReplyContext)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
+	kv.persist = persister
 	go kv.applier()
 	go kv.listenConfig()
 	if Output {

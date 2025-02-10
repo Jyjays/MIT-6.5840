@@ -33,12 +33,11 @@ func (kv *ShardKV) applier() {
 func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 	reply := &NotifychMsg{}
 	command := cmd.(Command)
-	DPrintf("{Server %d} apply command %v", kv.me, command)
+	//DPrintf("{Server %d} apply command %v", kv.me, command)
 	switch command.Type {
 	case Operation:
 		op := command.Data.(Op)
 		reply = kv.applyLogToStateMachine(&op)
-		kv.updateLastOperation(&op, reply)
 	case AddConfig:
 		cfg := command.Data.(shardctrler.Config)
 		reply = kv.applyConfig(cfg)
@@ -47,7 +46,6 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 	case DeleteShard:
 		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
 	}
-	reply.Err = OK
 	return reply
 }
 
@@ -60,10 +58,17 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 		reply.Err = ErrWrongGroup
 		return reply
 	}
+	if op.Type != "Get" && kv.checkDuplicate(op.ClientID, op.Seq) {
+		reply.Err = OK
+		return reply
+	}
 	state, value := kv.stateMachine.apply(*op)
-	reply.Value = value
+	if op.Type != "Get" {
+		kv.updateLastOperation(op, reply)
+	}
 	if state == Serving {
 		reply.Err = OK
+		reply.Value = value
 	} else {
 		reply.Err = ErrWrongGroup
 	}
@@ -79,8 +84,6 @@ func (kv *ShardKV) notify(index int, reply *NotifychMsg) {
 }
 
 func (kv *ShardKV) updateLastOperation(op *Op, reply *NotifychMsg) {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	ctx := ReplyContext{
 		Seq:  op.Seq,
 		Type: op.Type,
@@ -97,7 +100,7 @@ func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
-	DPrintf("{Server %d} apply config %v", kv.me, config)
+	DPrintf("{Server %d} apply config %v, currentNum %v", kv.me, config, kv.currentConfig.Num)
 	if config.Num <= kv.currentConfig.Num {
 		reply.Err = OK
 		return reply

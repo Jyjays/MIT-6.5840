@@ -1,7 +1,6 @@
 package shardkv
 
 type NotifychMsg struct {
-	Seq   int
 	Err   Err
 	Value string
 }

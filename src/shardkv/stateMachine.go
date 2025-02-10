@@ -39,6 +39,7 @@ func (kv *StateMachine) apply(op Op) (ShardState, string) {
 	if shard.State == Serving {
 		value, flag := shard.apply(op)
 		if flag {
+			DPrintf("Server %d apply %v, value %v", sid, op, value)
 			return Serving, value
 		}
 	}
