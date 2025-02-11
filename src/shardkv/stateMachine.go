@@ -6,12 +6,13 @@ type StateMachine struct {
 
 func (kv *StateMachine) insertShard(sid int, shard *Shard) {
 	//REVIEW - 应该深拷贝
-	kv.Shards[sid] = shard
+	kv.Shards[sid] = copyShard(shard)
 }
 
 func (kv *StateMachine) insertShards(shards map[int]*Shard) {
 	for sid, shard := range shards {
 		kv.insertShard(sid, shard)
+
 	}
 }
 
@@ -59,4 +60,14 @@ func (kv *StateMachine) setShardState(sid int, state ShardState) {
 		kv.insertShard(sid, shard)
 	}
 	shard.setShardState(state)
+}
+
+func (kv *StateMachine) getShardsByState(state ShardState) []int {
+	shards := make([]int, 0)
+	for sid, shard := range kv.Shards {
+		if shard.getShardState() == state {
+			shards = append(shards, sid)
+		}
+	}
+	return shards
 }

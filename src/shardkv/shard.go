@@ -76,3 +76,17 @@ func (s *Shard) getShardState() ShardState {
 func (s *Shard) setShardState(state ShardState) {
 	s.State = state
 }
+
+func copyShard(s *Shard) *Shard {
+	if s == nil {
+		return nil
+	}
+	newShard := new(Shard)
+	// 深拷贝 map
+	newShard.KvData = make(map[string]string)
+	for k, v := range s.KvData {
+		newShard.KvData[k] = v
+	}
+	newShard.State = s.State
+	return newShard
+}
