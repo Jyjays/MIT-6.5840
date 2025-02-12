@@ -43,6 +43,8 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 		reply = kv.applyConfig(cfg)
 	case InsertShard:
 		reply = kv.applyInsertShard(command.Data.(GetShardReply))
+	case UpdateShard:
+		reply = kv.applyUpdateShard(command.Data.(UpdateShardState))
 	case DeleteShard:
 		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
 	}
@@ -53,8 +55,10 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	var reply = &NotifychMsg{}
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+
 	sid := key2shard(op.Key)
 	if !kv.shardCanServe(sid) {
+		DPrintf("P1 {Group %v Server %v} Shard %v cannot serve\n", kv.gid, kv.me, sid)
 		reply.Err = ErrWrongGroup
 		return reply
 	}
@@ -70,8 +74,10 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 		reply.Err = OK
 		reply.Value = value
 	} else {
+		DPrintf("P2 {Group %v Server %v} Shard %v State %v, cannot serve\n", kv.gid, kv.me, sid, state)
 		reply.Err = ErrWrongGroup
 	}
+	//DPrintf("{Group %v Server %v} apply op %v, reply %v sid %v \n", kv.gid, kv.me, op, reply, sid)
 	return reply
 }
 
@@ -103,32 +109,60 @@ func (kv *ShardKV) updateLastOperation(op *Op, reply *NotifychMsg) {
 
 func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
 	kv.mu.Lock()
-	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
 	if config.Num <= kv.currentConfig.Num {
 		reply.Err = OK
 		return reply
 	}
-	// 更新状态机
-	kv.processNewConfig(config)
+	kv.mu.Unlock()
+	kv.processNewConfig(config.DeepCopy())
+
 	reply.Err = OK
 	return reply
 }
 func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
-	DPrintf("{Group %v Server %v} applyInsertShard %v\n", kv.gid, kv.me, re)
+
 	reply := &NotifychMsg{}
-	if re.ConfigNum != kv.lastConfig.Num {
+	if re.ConfigNum != kv.currentConfig.Num {
 		reply.Err = ErrWrongConfigNum
 		return reply
 	}
-	kv.stateMachine.insertShards(re.Shards, Serving)
-	kv.lastOperation = re.LastRequestMap
+	DPrintf("{Group %v Server %v} applyInsertShard %v\n", kv.gid, kv.me, re)
+	for sid, shardData := range re.Shards {
+		currentState := kv.stateMachine.getShardState(sid)
+		if currentState == Pulling {
+			kv.stateMachine.insertShard(sid, shardData, Serving)
+		} else {
+			//DPrintf("{Group %v Server %v} Shard %v State %v already processed, skipping\n", kv.gid, kv.me, sid, currentState)
+		}
+	}
+	for cid, op := range re.LastRequestMap {
+		if last, ok := kv.lastOperation[cid]; !ok || last.Seq < op.Seq {
+			kv.lastOperation[cid] = op
+		}
+	}
 	reply.Err = OK
 	return reply
 }
 
+func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
+	kv.mu.Lock()
+	defer kv.mu.Unlock()
+	reply := &NotifychMsg{}
+	//DPrintf("{Group %v Server %v} applyUpdateShard %v\n", kv.gid, kv.me, args)
+	if args.ConfigNum != kv.currentConfig.Num {
+		reply.Err = ErrWrongGroup
+		return reply
+	}
+
+	for _, sid := range args.ShardIDs {
+		kv.stateMachine.setShardState(sid, args.ShardState)
+	}
+	reply.Err = OK
+	return reply
+}
 func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()

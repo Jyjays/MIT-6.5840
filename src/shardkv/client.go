@@ -86,30 +86,31 @@ func (ck *Clerk) Get(key string) string {
 			leaderId = 0
 		}
 		if servers, ok := ck.config.Groups[gid]; ok {
-			// try each server for the shard.
-			for si := leaderId; si < len(servers); si++ {
+			n := len(servers)
+			// 使用循环队列方式遍历所有服务器
+			for i := 0; i < n; i++ {
+				si := (leaderId + i) % n // 以 leaderId 为起点，循环遍历
 				srv := ck.make_end(servers[si])
 				var reply GetReply
 				ok := srv.Call("ShardKV.Get", &args, &reply)
+				// 如果调用成功且错误为 OK 或 ErrNoKey，说明找到了正确的 leader
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
-					ck.leaderIDs[gid] = leaderId
+					// 更新该组的 leaderId 为成功响应的服务器索引
+					ck.leaderIDs[gid] = si
 					return reply.Value
 				}
-				if ok && (reply.Err == ErrWrongGroup) {
+				// 如果返回 ErrWrongGroup，则说明配置可能已经过时，退出当前循环
+				if ok && reply.Err == ErrWrongGroup {
+					ck.leaderIDs[gid] = si
 					break
 				}
-				// ... not ok, or ErrWrongLeader
-				if ok && reply.Err == ErrWrongLeader {
-					continue
-				}
+				// 对于 ErrWrongLeader 或调用失败，则继续尝试下一个服务器
 			}
 		}
+		// 没有找到正确的服务器或请求失败，等待一段时间后更新最新配置重试
 		time.Sleep(100 * time.Millisecond)
-		// ask controller for the latest configuration.
 		ck.config = ck.sm.Query(-1)
 	}
-
-	return ""
 }
 
 // shared by Put and Append.
@@ -132,22 +133,25 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 			leaderId = 0
 		}
 		if servers, ok := ck.config.Groups[gid]; ok {
-			for si := leaderId; si < len(servers); si++ {
+			n := len(servers)
+			// 使用循环队列方式遍历所有服务器
+			for i := 0; i < n; i++ {
+				si := (leaderId + i) % n // 以 leaderId 为起点，循环遍历
 				srv := ck.make_end(servers[si])
 				var reply PutAppendReply
 				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
+				// 如果调用成功且错误为 OK，则说明找到了正确的 leader
 				if ok && reply.Err == OK {
+					// 更新该组的 leaderId 为成功响应的服务器索引
 					ck.leaderIDs[gid] = si
 					return
 				}
-				if ok && reply.Err == ErrWrongLeader {
-					continue
-				}
+				// 如果返回 ErrWrongGroup，则说明配置可能已经过时，退出当前循环
 				if ok && reply.Err == ErrWrongGroup {
+					ck.leaderIDs[gid] = si
 					break
 				}
-				// ... not ok, or ErrWrongLeader
-
+				// 对于 ErrWrongLeader 或调用失败，则继续尝试下一个服务器
 			}
 		}
 		time.Sleep(100 * time.Millisecond)

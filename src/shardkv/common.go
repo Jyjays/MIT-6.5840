@@ -67,6 +67,12 @@ type GetShardReply struct {
 	LastRequestMap map[int64]ReplyContext // 请求Map 发送分片的时候也发送这个过去 更新对面复制组的map 用于去重
 }
 
+type UpdateShardState struct {
+	ConfigNum  int
+	ShardIDs   []int
+	ShardState ShardState
+}
+
 type DeleteShardArgs struct {
 	ShardIDs  []int // 需要删除的分片数组ID
 	ConfigNum int   // 当前配置号

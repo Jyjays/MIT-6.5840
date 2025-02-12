@@ -27,6 +27,14 @@ func (kv *StateMachine) getShard(sid int) *Shard {
 	return kv.Shards[sid]
 }
 
+func (kv *StateMachine) getShardState(sid int) ShardState {
+	shard := kv.getShard(sid)
+	if shard == nil {
+		return Unknown
+	}
+	return shard.State
+}
+
 func (kv *StateMachine) deleteShard(sid int) {
 	delete(kv.Shards, sid)
 }

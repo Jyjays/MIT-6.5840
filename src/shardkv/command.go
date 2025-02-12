@@ -13,6 +13,7 @@ const (
 	Operation   cmd = "Operation"
 	AddConfig       = "AddConfig"
 	InsertShard     = "InsertShard"
+	UpdateShard     = "UpdateShard"
 	DeleteShard     = "DeleteShard"
 )
 
@@ -28,6 +29,10 @@ func NewOperationCommand(args *Op) Command {
 
 func NewInsertShardsCommand(reply *GetShardReply) Command {
 	return Command{Type: InsertShard, Data: *reply}
+}
+
+func NewUpdateShardsCommand(args *UpdateShardState) Command {
+	return Command{Type: UpdateShard, Data: *args}
 }
 
 func NewDeleteShardsCommand(args *DeleteShardArgs) Command {

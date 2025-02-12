@@ -68,6 +68,19 @@ func removeMap(original map[int][]string, gids []int) map[int][]string {
 	return newMap
 }
 
+func (c *Config) DeepCopy() Config {
+	newConfig := Config{
+		Num:    c.Num,
+		Shards: [NShards]int{},
+		Groups: make(map[int][]string),
+	}
+	copy(newConfig.Shards[:], c.Shards[:])
+	for k, v := range c.Groups {
+		newConfig.Groups[k] = append([]string{}, v...)
+	}
+	return newConfig
+}
+
 // 贪心策略： 每次都将最多的shard分配给最少的group，直到所有group的shard数目平均或相差1
 // 1. 计算每个group的shard数目
 // 2. 计算每个group的shard数目的平均值
