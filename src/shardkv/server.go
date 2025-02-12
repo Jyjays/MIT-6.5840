@@ -78,10 +78,22 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 }
 
+func (kv *ShardKV) isLeader() bool {
+	if _, isLeader := kv.rf.GetState(); isLeader {
+		return true
+	}
+	return false
+}
+
 func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 	// DPrintf("Server %v GetShard %v\n", kv.me, args)
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	if !kv.isLeader() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+
 	if args.ConfigNum != kv.lastConfig.Num || args.Gid != kv.gid {
 		DPrintf("GetShard err: {Group %v server %v} args.configNum %v, lastconfigNum %v, gid %v\n", kv.gid, kv.me, args.ConfigNum, kv.lastConfig.Num, args.Gid)
 		reply.Err = ErrWrongConfigNum
@@ -123,7 +135,10 @@ func (kv *ShardKV) killed() bool {
 
 func (kv *ShardKV) listenConfig() {
 	for !kv.killed() {
-
+		if !kv.isLeader() {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 		kv.mu.Lock()
 		currentNum := kv.currentConfig.Num
 		kv.mu.Unlock()
@@ -140,6 +155,10 @@ func (kv *ShardKV) listenConfig() {
 
 func (kv *ShardKV) listenPullingShard() {
 	for !kv.killed() {
+		if !kv.isLeader() {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 		kv.mu.Lock()
 		pullShards := kv.stateMachine.getShardsByState(Pulling)
 
@@ -165,7 +184,6 @@ func (kv *ShardKV) listenPullingShard() {
 
 					if ok && reply.Err == OK {
 						//TODO - apply shard
-						DPrintf("Server %v GetShard %v %v\n", kv.me, args, reply)
 						kv.mu.Unlock()
 						cmd := NewInsertShardsCommand(&reply)
 						kv.startCmd(cmd)
@@ -202,7 +220,7 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 					// DPrintf("{Group %v Server %v} pull shard %v from %v\n", kv.gid, kv.me, sid, oldgid)
 					// DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, *(kv.stateMachine.getShard(sid)))
 				} else {
-					kv.stateMachine.insertShard(sid, newShard())
+					kv.stateMachine.insertShard(sid, newShard(), Serving)
 				}
 
 			}
@@ -251,6 +269,8 @@ func (kv *ShardKV) startCmd(cmd interface{}) *NotifychMsg {
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
 		//DPrintf("{Group %v Server %v} startOp timeout index:%v\n", kv.gid, kv.me, index)
 		kv.closeNotifyChMsg(index)
+		msg = &NotifychMsg{}
+		msg.Err = ErrTimeout
 	}
 	return msg
 }
@@ -308,6 +328,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.persist = persister
 
+	kv.restoreSnapshot(kv.persist.ReadSnapshot())
 	go kv.applier()
 	go kv.listenConfig()
 	go kv.listenPullingShard()

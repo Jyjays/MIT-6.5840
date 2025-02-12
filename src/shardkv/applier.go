@@ -3,7 +3,7 @@ package shardkv
 import "6.5840/shardctrler"
 
 func (kv *ShardKV) applier() {
-	for {
+	for !kv.killed() {
 		select {
 		case applyMsg := <-kv.applyCh:
 			if applyMsg.CommandValid {
@@ -16,17 +16,17 @@ func (kv *ShardKV) applier() {
 				if isLeader && applyMsg.CurrentTerm == currentTerm {
 					kv.notify(applyMsg.CommandIndex, reply)
 				}
-				//kv.kvSnapshot()
+				kv.kvSnapshot()
 				kv.lastApplied = applyMsg.CommandIndex
 			}
-			// if applyMsg.SnapshotValid {
-			// 	kv.mu.Lock()
-			// 	if applyMsg.SnapshotIndex > kv.lastApplied {
-			// 		kv.restoreSnapshot(applyMsg.Snapshot)
-			// 		kv.lastApplied = applyMsg.SnapshotIndex
-			// 	}
-			// 	kv.mu.Unlock()
-			// }
+			if applyMsg.SnapshotValid {
+				kv.mu.Lock()
+				if applyMsg.SnapshotIndex > kv.lastApplied {
+					kv.restoreSnapshot(applyMsg.Snapshot)
+					kv.lastApplied = applyMsg.SnapshotIndex
+				}
+				kv.mu.Unlock()
+			}
 		}
 	}
 }
