@@ -54,6 +54,8 @@ func (s *Shard) apply(op Op) (string, bool) {
 		if s.hasKey(op.Key) {
 			return s.get(op.Key), true
 		}
+		// DPrintf("Didn't find key %v", op.Key)
+		return "", false
 	case "Put":
 		s.put(op.Key, op.Value)
 		return "", true

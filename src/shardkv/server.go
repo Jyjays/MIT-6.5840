@@ -52,7 +52,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	cmd := NewOperationCommand(&op)
 
 	msg := kv.startCmd(cmd)
-	DPrintf("Server %v Get %v\n", kv.me, msg)
+	DPrintf("{Group %v Server %v} Get %v\n", kv.gid, kv.me, msg)
 	if msg.Err == OK {
 		reply.Err = OK
 		reply.Value = msg.Value
@@ -83,8 +83,8 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	if args.ConfigNum != kv.lastConfig.Num || args.Gid != kv.gid {
-		DPrintf("GetShard err: {server %v} args.configNum %v, lastconfigNum %v, gid %v\n", kv.me, args.ConfigNum, kv.lastConfig.Num, args.Gid)
-		reply.Err = ErrWrongGroup
+		DPrintf("GetShard err: {Group %v server %v} args.configNum %v, lastconfigNum %v, gid %v\n", kv.gid, kv.me, args.ConfigNum, kv.lastConfig.Num, args.Gid)
+		reply.Err = ErrWrongConfigNum
 	}
 	shards := make(map[int]*Shard)
 	for _, sid := range args.ShardIDs {
@@ -92,11 +92,18 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 		if shard != nil && shard.getShardState() == Sending {
 			// 这里深拷贝后传递，防止后续修改
 			shards[sid] = copyShard(shard)
+			//FIXME - 不应该直接设置为GCing，应该等到applyInsertShard后再设置
+			//shard.setShardState(GCing)
 		}
 	}
-	reply.Err = OK
-	reply.ConfigNum = kv.lastConfig.Num
-	reply.Shards = shards
+	if len(shards) == 0 {
+		reply.Err = ErrWrongGroup
+	} else {
+		reply.Err = OK
+		reply.ConfigNum = kv.lastConfig.Num
+		reply.Shards = shards
+	}
+
 }
 
 // the tester calls Kill() when a ShardKV instance won't
@@ -131,15 +138,20 @@ func (kv *ShardKV) listenConfig() {
 	}
 }
 
-func (kv *ShardKV) listenShard() {
+func (kv *ShardKV) listenPullingShard() {
 	for !kv.killed() {
 		kv.mu.Lock()
 		pullShards := kv.stateMachine.getShardsByState(Pulling)
-		sendShards := kv.stateMachine.getShardsByState(Sending)
+
 		if len(pullShards) > 0 {
 			//TODO - pull shards
+			DPrintf("{Group %v Server %v} listenPullingShard %v\n", kv.gid, kv.me, pullShards)
 			for _, sid := range pullShards {
 				get_gid := kv.lastConfig.Shards[sid]
+				if get_gid == kv.gid {
+					kv.stateMachine.setShardState(sid, Serving)
+					continue
+				}
 				args := GetShardArgs{
 					ConfigNum: kv.lastConfig.Num, //NOTE - 应该从旧配置中获取，因为shard数据是在旧配置中的
 					ShardIDs:  pullShards,
@@ -150,9 +162,10 @@ func (kv *ShardKV) listenShard() {
 
 					reply := GetShardReply{}
 					ok := srv.Call("ShardKV.GetShard", &args, &reply)
-					DPrintf("Server %v GetShard %v %v\n", kv.me, args, reply)
+
 					if ok && reply.Err == OK {
 						//TODO - apply shard
+						DPrintf("Server %v GetShard %v %v\n", kv.me, args, reply)
 						kv.mu.Unlock()
 						cmd := NewInsertShardsCommand(&reply)
 						kv.startCmd(cmd)
@@ -162,9 +175,6 @@ func (kv *ShardKV) listenShard() {
 				}
 			}
 		}
-		if len(sendShards) > 0 {
-			//TODO - send shards
-		}
 		kv.mu.Unlock()
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -173,14 +183,14 @@ func (kv *ShardKV) listenShard() {
 func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
 	// toBeInsertedShards := make(map[int]*Shard)
-	DPrintf("Server %v processNewConfig %v currentNum %v \n", kv.me, config, kv.currentConfig.Num)
+	DPrintf("{Group%v Server %v} processNewConfig %v currentNum %v \n", kv.gid, kv.me, config, kv.currentConfig.Num)
 	oldShards := kv.currentConfig.Shards
 	newShards := config.Shards
 	// 持有者 -> 要拉取的shards
 	// pullMap := make(map[int][]int)
 	// // 接收端 -> 要发送的shards
 	// sendMap := make(map[int][]int)
-
+	DPrintf("{Group %v Server %v} currentConfig %v\n", kv.gid, kv.me, kv.currentConfig)
 	for sid := 0; sid < shardctrler.NShards; sid++ {
 		newgid := newShards[sid]
 		oldgid := oldShards[sid]
@@ -189,6 +199,8 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 				if oldgid != 0 {
 					//pullMap[oldgid] = append(pullMap[oldgid], sid)
 					kv.stateMachine.setShardState(sid, Pulling)
+					// DPrintf("{Group %v Server %v} pull shard %v from %v\n", kv.gid, kv.me, sid, oldgid)
+					// DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, *(kv.stateMachine.getShard(sid)))
 				} else {
 					kv.stateMachine.insertShard(sid, newShard())
 				}
@@ -198,7 +210,10 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 			if oldgid == kv.gid {
 				if oldgid != 0 {
 					//sendMap[newgid] = append(sendMap[newgid], sid)
+
 					kv.stateMachine.setShardState(sid, Sending)
+					// DPrintf("{Group %v Server %v} send shard %v to %v\n", kv.gid, kv.me, sid, newgid)
+					// DPrintf("{Group %v Server %v} set shard %v state Sending\n", kv.gid, kv.me, *(kv.stateMachine.getShard(sid)))
 				}
 
 			}
@@ -225,16 +240,16 @@ func (kv *ShardKV) startCmd(cmd interface{}) *NotifychMsg {
 	if !isLeader {
 		msg := &NotifychMsg{}
 		msg.Err = ErrWrongLeader
-		//DPrintf("Server %v StartCmd %v ErrWrongLeader", kv.me, cmd)
+		//DPrintf("{Group %v Server %v} StartCmd %v ErrWrongLeader", kv.gid, kv.me, cmd)
 		return msg
 	}
 	ch := kv.getNotifyChMsg(index)
 	select {
 	case msg = <-ch:
 		kv.closeNotifyChMsg(index)
-		//DPrintf("Server %v msg:%v\n", kv.me, msg)
+		//DPrintf("{Group %v Server %v} msg:%v\n", kv.gid, kv.me, msg)
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
-		//DPrintf("Server %v startOp timeout index:%v\n", kv.me, index)
+		//DPrintf("{Group %v Server %v} startOp timeout index:%v\n", kv.gid, kv.me, index)
 		kv.closeNotifyChMsg(index)
 	}
 	return msg
@@ -273,6 +288,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	labgob.Register(Command{})
 	labgob.Register(Shard{})
 	labgob.Register(shardctrler.Config{})
+	labgob.Register(GetShardReply{})
 	kv := new(ShardKV)
 	kv.me = me
 	kv.maxraftstate = maxraftstate
@@ -280,22 +296,21 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	kv.gid = gid
 	kv.ctrlers = ctrlers
 	kv.dead = 0
+	kv.lastApplied = 0
 
-	// Your initialization code here.
-
-	// Use something like this to talk to the shardctrler:
 	kv.mck = shardctrler.MakeClerk(kv.ctrlers)
 	kv.currentConfig = shardctrler.Config{}
 	kv.lastConfig = shardctrler.Config{}
 	kv.applyCh = make(chan raft.ApplyMsg)
 	kv.stateMachine = newStateMachine()
-	kv.lastApplied = 0
 	kv.notifyMap = make(map[int]chan *NotifychMsg)
 	kv.lastOperation = make(map[int64]ReplyContext)
 	kv.rf = raft.Make(servers, me, persister, kv.applyCh)
 	kv.persist = persister
+
 	go kv.applier()
 	go kv.listenConfig()
+	go kv.listenPullingShard()
 	if Output {
 		file, _ := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 		log.SetOutput(file)

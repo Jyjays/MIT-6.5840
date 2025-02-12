@@ -90,7 +90,12 @@ func (kv *ShardKV) updateLastOperation(op *Op, reply *NotifychMsg) {
 		Err:  reply.Err,
 	}
 
+	if kv.lastOperation == nil {
+		kv.lastOperation = make(map[int64]ReplyContext)
+	}
+
 	last, ok := kv.lastOperation[op.ClientID]
+
 	if !ok || last.Seq < op.Seq {
 		kv.lastOperation[op.ClientID] = ctx
 	}
@@ -100,7 +105,6 @@ func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
-	DPrintf("{Server %d} apply config %v, currentNum %v", kv.me, config, kv.currentConfig.Num)
 	if config.Num <= kv.currentConfig.Num {
 		reply.Err = OK
 		return reply
@@ -113,12 +117,13 @@ func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
 func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
+	DPrintf("{Group %v Server %v} applyInsertShard %v\n", kv.gid, kv.me, re)
 	reply := &NotifychMsg{}
-	if re.ConfigNum != kv.currentConfig.Num {
-		reply.Err = ErrWrongGroup
+	if re.ConfigNum != kv.lastConfig.Num {
+		reply.Err = ErrWrongConfigNum
 		return reply
 	}
-	kv.stateMachine.insertShards(re.Shards)
+	kv.stateMachine.insertShards(re.Shards, Serving)
 	kv.lastOperation = re.LastRequestMap
 	reply.Err = OK
 	return reply

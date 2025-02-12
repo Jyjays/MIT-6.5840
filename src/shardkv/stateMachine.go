@@ -4,15 +4,22 @@ type StateMachine struct {
 	Shards map[int]*Shard
 }
 
-func (kv *StateMachine) insertShard(sid int, shard *Shard) {
-	//REVIEW - 应该深拷贝
+func (kv *StateMachine) insertShard(sid int, shard *Shard, states ...ShardState) {
+	state := Serving // 默认值
+	if len(states) > 0 {
+		state = states[0]
+	}
 	kv.Shards[sid] = copyShard(shard)
+	kv.Shards[sid].State = state
 }
 
-func (kv *StateMachine) insertShards(shards map[int]*Shard) {
+func (kv *StateMachine) insertShards(shards map[int]*Shard, states ...ShardState) {
+	state := Serving // 默认值
+	if len(states) > 0 {
+		state = states[0]
+	}
 	for sid, shard := range shards {
-		kv.insertShard(sid, shard)
-
+		kv.insertShard(sid, shard, state)
 	}
 }
 
@@ -40,11 +47,14 @@ func (kv *StateMachine) apply(op Op) (ShardState, string) {
 	if shard.State == Serving {
 		value, flag := shard.apply(op)
 		if flag {
-			DPrintf("Server %d apply %v, value %v", sid, op, value)
+			// DPrintf("{Server %d} apply %v, value %v", sid, op, value)
 			return Serving, value
+		} else {
+			return Unknown, ""
 		}
+	} else {
+		return shard.State, ""
 	}
-	return shard.State, ""
 }
 
 func newStateMachine() *StateMachine {
@@ -57,9 +67,12 @@ func (kv *StateMachine) setShardState(sid int, state ShardState) {
 	shard := kv.getShard(sid)
 	if shard == nil {
 		shard = newShard()
-		kv.insertShard(sid, shard)
+		kv.insertShard(sid, shard, state)
+	} else {
+		shard.State = state
 	}
-	shard.setShardState(state)
+	//FIXME - 由于深拷贝，这里的shard是一个新的对象，所以这里的setShardState不会影响到kv.Shards
+	//shard.setShardState(state)
 }
 
 func (kv *StateMachine) getShardsByState(state ShardState) []int {
