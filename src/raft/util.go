@@ -199,6 +199,12 @@ func (rf *Raft) getLastLog() LogEntry {
 	return rf.log[len(rf.log)-1]
 }
 
+func (rf *Raft) HasCurrentTermLog() bool {
+	rf.mu.RLock()
+	defer rf.mu.RUnlock()
+	return rf.getLastLog().Term == rf.currentTerm
+}
+
 func (rf *Raft) getFirstLog() LogEntry {
 	return rf.log[0]
 }

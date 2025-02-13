@@ -330,6 +330,19 @@ func (kv *ShardKV) listenDeleteShard() {
 	}
 }
 
+func (kv *ShardKV) listenCurrentTermLog() {
+	for !kv.killed() {
+		if !kv.isLeader() {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+		if !kv.rf.HasCurrentTermLog() {
+			kv.startCmd(NewEmptyLogCommand())
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+}
+
 func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
 	// toBeInsertedShards := make(map[int]*Shard)

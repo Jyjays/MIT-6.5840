@@ -26,8 +26,6 @@ func check(t *testing.T, ck *Clerk, key string, value string) {
 // test static 2-way sharding, without shard movement.
 func TestStaticShards5A(t *testing.T) {
 	fmt.Printf("Test (5A): static shards ...\n")
-	DPrintf("Test (5A): static shards ...\n")
-	defer DPrintf("Test (5A): static shards done\n")
 	cfg := make_config(t, 3, false, -1)
 	defer cfg.cleanup()
 
@@ -52,7 +50,6 @@ func TestStaticShards5A(t *testing.T) {
 	// shutting down one shard and checking that some
 	// Get()s don't succeed.
 	cfg.ShutdownGroup(1)
-	DPrintf("shutdown 1\n")
 	cfg.checklogs() // forbid snapshots
 
 	ch := make(chan string)

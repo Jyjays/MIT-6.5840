@@ -48,6 +48,8 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 		reply = kv.applyUpdateShard(command.Data.(UpdateShardState))
 	case DeleteShard:
 		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
+	case EmptyLog:
+		reply.Err = OK
 	}
 	return reply
 }

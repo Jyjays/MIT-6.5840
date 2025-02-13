@@ -15,6 +15,7 @@ const (
 	InsertShard     = "InsertShard"
 	UpdateShard     = "UpdateShard"
 	DeleteShard     = "DeleteShard"
+	EmptyLog        = "EmptyLog"
 )
 
 // NewConfigCommand 添加新配置的命令
@@ -37,4 +38,8 @@ func NewUpdateShardsCommand(args *UpdateShardState) Command {
 
 func NewDeleteShardsCommand(args *DeleteShardArgs) Command {
 	return Command{Type: DeleteShard, Data: *args}
+}
+
+func NewEmptyLogCommand() Command {
+	return Command{Type: EmptyLog}
 }
