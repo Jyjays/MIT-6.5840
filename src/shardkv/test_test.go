@@ -52,6 +52,7 @@ func TestStaticShards5A(t *testing.T) {
 	// shutting down one shard and checking that some
 	// Get()s don't succeed.
 	cfg.ShutdownGroup(1)
+	DPrintf("shutdown 1\n")
 	cfg.checklogs() // forbid snapshots
 
 	ch := make(chan string)

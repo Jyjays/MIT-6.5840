@@ -50,6 +50,7 @@ func (kv *StateMachine) apply(op Op) (ShardState, string) {
 	shard := kv.getShard(sid)
 
 	if shard == nil {
+		DPrintf("Didn't find shard %v", sid)
 		return Unknown, ""
 	}
 	if shard.State == Serving {

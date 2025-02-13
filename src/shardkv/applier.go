@@ -44,6 +44,7 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 	case InsertShard:
 		reply = kv.applyInsertShard(command.Data.(GetShardReply))
 	case UpdateShard:
+		DPrintf("{Group %v Server %v} applyUpdateShard %v\n", kv.gid, kv.me, command.Data)
 		reply = kv.applyUpdateShard(command.Data.(UpdateShardState))
 	case DeleteShard:
 		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
@@ -70,7 +71,9 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	if op.Type != "Get" {
 		kv.updateLastOperation(op, reply)
 	}
-	if state == Serving {
+	if state == Unknown {
+		reply.Err = ErrNoKey
+	} else if state == Serving {
 		reply.Err = OK
 		reply.Value = value
 	} else {
@@ -125,6 +128,12 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 	defer kv.mu.Unlock()
 
 	reply := &NotifychMsg{}
+	if re.ConfigNum < kv.currentConfig.Num {
+		DPrintf("{Group %v Server %v applyInsertShard: config num %v is less than current %v, ignoring\n",
+			kv.gid, kv.me, re.ConfigNum, kv.currentConfig.Num)
+		reply.Err = OK
+		return reply
+	}
 	if re.ConfigNum != kv.currentConfig.Num {
 		reply.Err = ErrWrongConfigNum
 		return reply
@@ -151,7 +160,13 @@ func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
-	//DPrintf("{Group %v Server %v} applyUpdateShard %v\n", kv.gid, kv.me, args)
+	// 如果传入的 config 版本低于当前版本，则认为这条命令已经过时，不必重复处理
+	if args.ConfigNum < kv.currentConfig.Num {
+		DPrintf("{Group %v Server %v} applyUpdateShard: config num %v is less than current %v, ignoring\n",
+			kv.gid, kv.me, args.ConfigNum, kv.currentConfig.Num)
+		reply.Err = OK
+		return reply
+	}
 	if args.ConfigNum != kv.currentConfig.Num {
 		reply.Err = ErrWrongGroup
 		return reply
@@ -161,12 +176,20 @@ func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
 		kv.stateMachine.setShardState(sid, args.ShardState)
 	}
 	reply.Err = OK
+	DPrintf("{Group %v Server %v} applyUpdateShard success  %v\n", kv.gid, kv.me, args)
 	return reply
 }
+
 func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
+	if args.ConfigNum < kv.currentConfig.Num {
+		DPrintf("{Group %v Server %v} applyDeleteShard: config num %v is less than current %v, ignoring\n",
+			kv.gid, kv.me, args.ConfigNum, kv.currentConfig.Num)
+		reply.Err = OK
+		return reply
+	}
 	if args.ConfigNum != kv.currentConfig.Num {
 		reply.Err = ErrWrongGroup
 		return reply
