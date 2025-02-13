@@ -64,7 +64,7 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 		return reply
 	}
 	if op.Type != "Get" && kv.checkDuplicate(op.ClientID, op.Seq) {
-		reply.Err = OK
+		reply.Err = kv.lastOperation[op.ClientID].Err
 		return reply
 	}
 	state, value := kv.stateMachine.apply(*op)
@@ -194,7 +194,15 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 		reply.Err = ErrWrongGroup
 		return reply
 	}
-	kv.stateMachine.deleteShards(args.ShardIDs)
+	for _, sid := range args.ShardIDs {
+		shard := kv.stateMachine.getShard(sid)
+		if shard.getShardState() == Sending {
+			kv.stateMachine.insertShard(sid, newShard(), Serving)
+		} else {
+			DPrintf("{Group %v Server %v} applyDeleteShard: shard %v state %v, skipping\n",
+				kv.gid, kv.me, sid, shard.getShardState())
+		}
+	}
 	reply.Err = OK
 	return reply
 }

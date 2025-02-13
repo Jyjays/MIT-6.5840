@@ -25,3 +25,18 @@ func (kv *ShardKV) checkDuplicate(clientId int64, seq int) bool {
 	}
 	return false
 }
+
+func (kv *ShardKV) getGidToShards(state ShardState) map[int][]int {
+	shards := kv.stateMachine.getShardsByState(state)
+	gidToShards := make(map[int][]int)
+	for _, sid := range shards {
+		gid := kv.lastConfig.Shards[sid]
+		if _, ok := gidToShards[gid]; !ok {
+			gidToShards[gid] = make([]int, 0)
+		}
+		if gid != 0 {
+			gidToShards[gid] = append(gidToShards[gid], sid)
+		}
+	}
+	return gidToShards
+}

@@ -80,7 +80,8 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 	if kv.checkDuplicate(args.ClientID, args.Seq) {
-		reply.Err = OK
+		lastOp := kv.LastOperation[args.ClientID]
+		reply.Err = lastOp.Err
 		return
 	}
 	oper := Op{
@@ -106,7 +107,8 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		return
 	}
 	if kv.checkDuplicate(args.ClientID, args.Seq) {
-		reply.Err = OK
+		lastOp := kv.LastOperation[args.ClientID]
+		reply.Err = lastOp.Err
 		return
 	}
 	oper := Op{

@@ -22,7 +22,7 @@ type Op struct {
 }
 
 type ShardKV struct {
-	mu           sync.Mutex
+	mu           sync.RWMutex
 	me           int
 	rf           *raft.Raft
 	dead         int32
@@ -62,6 +62,14 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
+	// kv.mu.RLock()
+	// if kv.checkDuplicate(args.ClientID, args.Seq) {
+	// 	lastOp := kv.lastOperation[args.ClientID]
+	// 	kv.mu.RUnlock()
+	// 	reply.Err = lastOp.Err
+	// 	return
+	// }
+	// kv.mu.RUnlock()
 	op := Op{
 		Type:     args.Op,
 		Key:      args.Key,
@@ -129,6 +137,24 @@ func (kv *ShardKV) GetShard(args *GetShardArgs, reply *GetShardReply) {
 	}
 }
 
+func (kv *ShardKV) DeleteShard(args *DeleteShardArgs, reply *DeleteShardReply) {
+	if !kv.isLeader() {
+		reply.Err = ErrWrongLeader
+		return
+	}
+	kv.mu.RLock()
+	if args.ConfigNum < kv.currentConfig.Num {
+		reply.Err = OK
+		kv.mu.RUnlock()
+		return
+	}
+	kv.mu.RUnlock()
+	cmd := NewDeleteShardsCommand(args)
+	msg := kv.startCmd(cmd)
+	reply.Err = msg.Err
+
+}
+
 // the tester calls Kill() when a ShardKV instance won't
 // be needed again. you are not required to do anything
 // in Kill(), but it might be convenient to (for example)
@@ -151,70 +177,160 @@ func (kv *ShardKV) listenConfig() {
 			continue
 		}
 		kv.mu.Lock()
+		flag := true
+		//FIXME - If there's any shard's state is not Serving, then don't listen new config
+		for _, shard := range kv.stateMachine.Shards {
+			if shard.getShardState() == Pulling {
+				DPrintf("{Group %v Server %v} listenConfig shard %v state Pulling\n", kv.gid, kv.me, shard)
+				flag = false
+				break
+			}
+		}
 		currentNum := kv.currentConfig.Num
 		kv.mu.Unlock()
-		config := kv.mck.Query(currentNum + 1)
-		if config.Num == currentNum+1 {
-			cmd := NewConfigCommand(&config)
-			kv.startCmd(cmd)
-		} else {
-			//DPrintf("Server %v listenConfig config.Num:%v currentNum:%v\n", kv.me, config.Num, currentNum)
+		if flag {
+			config := kv.mck.Query(currentNum + 1)
+			if config.Num == currentNum+1 {
+				cmd := NewConfigCommand(&config)
+				kv.startCmd(cmd)
+			} else {
+				//DPrintf("Server %v listenConfig config.Num:%v currentNum:%v\n", kv.me, config.Num, currentNum)
+			}
 		}
+
 		time.Sleep(100 * time.Millisecond)
 	}
 }
 
+// func (kv *ShardKV) listenPullingShard() {
+// 	for !kv.killed() {
+// 		if !kv.isLeader() {
+// 			time.Sleep(100 * time.Millisecond)
+// 			continue
+// 		}
+// 		kv.mu.Lock()
+// 		pullShards := kv.stateMachine.getShardsByState(Pulling)
+// 		//DPrintf("{Group %v Server %v} listenPullingShard %v\n", kv.gid, kv.me, pullShards)
+// 		pullMeShardIDs := make([]int, 0) // gid为当前组的shard
+// 		if len(pullShards) > 0 {
+// 			//DPrintf("{Group %v Server %v} listenPullingShard %v\n", kv.gid, kv.me, pullShards)
+// 			for _, sid := range pullShards {
+// 				get_gid := kv.lastConfig.Shards[sid]
+// 				if get_gid == kv.gid {
+// 					pullMeShardIDs = append(pullMeShardIDs, sid)
+// 					continue
+// 				}
+// 				args := GetShardArgs{
+// 					ConfigNum: kv.currentConfig.Num,
+// 					ShardIDs:  pullShards,
+// 					Gid:       get_gid,
+// 				}
+
+// 				for _, server := range kv.lastConfig.Groups[get_gid] {
+// 					srv := kv.make_end(server)
+// 					reply := GetShardReply{}
+// 					ok := srv.Call("ShardKV.GetShard", &args, &reply)
+// 					DPrintf("{Group %v Server %v} GetShard %v reply %v\n", kv.gid, kv.me, args, reply)
+// 					if ok && reply.Err == OK {
+// 						kv.mu.Unlock()
+// 						cmd := NewInsertShardsCommand(&reply)
+// 						kv.startCmd(cmd)
+// 						kv.mu.Lock()
+// 						break
+// 					}
+// 				}
+// 			}
+// 		}
+// 		if len(pullMeShardIDs) > 1 {
+// 			updateShardState := &UpdateShardState{
+// 				ConfigNum:  kv.currentConfig.Num,
+// 				ShardIDs:   pullMeShardIDs,
+// 				ShardState: Serving,
+// 			}
+// 			cmd := NewUpdateShardsCommand(updateShardState)
+// 			kv.mu.Unlock()
+// 			kv.startCmd(cmd)
+// 			kv.mu.Lock()
+// 		}
+// 		kv.mu.Unlock()
+// 		time.Sleep(100 * time.Millisecond)
+// 	}
+// }
 func (kv *ShardKV) listenPullingShard() {
 	for !kv.killed() {
+		// 只有 leader 才执行迁移操作
 		if !kv.isLeader() {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-		kv.mu.Lock()
-		pullShards := kv.stateMachine.getShardsByState(Pulling)
-		//DPrintf("{Group %v Server %v} listenPullingShard %v\n", kv.gid, kv.me, pullShards)
-		pullMeShardIDs := make([]int, 0) // gid为当前组的shard
-		if len(pullShards) > 0 {
-			//DPrintf("{Group %v Server %v} listenPullingShard %v\n", kv.gid, kv.me, pullShards)
-			for _, sid := range pullShards {
-				get_gid := kv.lastConfig.Shards[sid]
-				if get_gid == kv.gid {
-					pullMeShardIDs = append(pullMeShardIDs, sid)
-					continue
-				}
-				args := GetShardArgs{
-					ConfigNum: kv.currentConfig.Num,
-					ShardIDs:  pullShards,
-					Gid:       get_gid,
-				}
+		// 先获取当前需要拉取的 shard 列表以及相关配置信息，快速复制后释放锁
+		kv.mu.RLock()
+		pullingShards := kv.stateMachine.getShardsByState(Pulling)
+		currentConfigNum := kv.currentConfig.Num
+		// 对 lastConfig 做个深拷贝，避免后续变化影响使用
+		lastConfig := kv.lastConfig.DeepCopy()
+		kv.mu.RUnlock()
 
-				for _, server := range kv.lastConfig.Groups[get_gid] {
-					srv := kv.make_end(server)
-					reply := GetShardReply{}
-					ok := srv.Call("ShardKV.GetShard", &args, &reply)
-					DPrintf("{Group %v Server %v} GetShard %v reply %v\n", kv.gid, kv.me, args, reply)
-					if ok && reply.Err == OK {
-						kv.mu.Unlock()
-						cmd := NewInsertShardsCommand(&reply)
-						kv.startCmd(cmd)
-						kv.mu.Lock()
-						break
-					}
-				}
+		// 如果没有需要拉取的 shard，则等待一会再重试
+		if len(pullingShards) == 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
+
+		// 将 pullShards 按照原持有者（即 lastConfig.Shards[sid]）分组
+		// 对于那些在旧配置中已经属于本组的 shard，我们不需要拉取数据，只需直接将状态更新为 Serving
+		groupToShardIDs := make(map[int][]int)
+		var selfShardIDs []int
+		for _, sid := range pullingShards {
+			origGid := lastConfig.Shards[sid]
+			if origGid == kv.gid {
+				selfShardIDs = append(selfShardIDs, sid)
+			} else {
+				groupToShardIDs[origGid] = append(groupToShardIDs[origGid], sid)
 			}
 		}
-		if len(pullMeShardIDs) > 1 {
-			updateShardState := &UpdateShardState{
-				ConfigNum:  kv.currentConfig.Num,
-				ShardIDs:   pullMeShardIDs,
+
+		// 对于旧配置中本组已拥有的 shard，只更新状态为 Serving
+		if len(selfShardIDs) > 0 {
+			updateArgs := &UpdateShardState{
+				ConfigNum:  currentConfigNum,
+				ShardIDs:   selfShardIDs,
 				ShardState: Serving,
 			}
-			cmd := NewUpdateShardsCommand(updateShardState)
-			kv.mu.Unlock()
-			kv.startCmd(cmd)
-			kv.mu.Lock()
+			// 提交状态更新命令（此处可以直接调用 startCmd，因为整个过程也通过 Raft 复制）
+			kv.startCmd(NewUpdateShardsCommand(updateArgs))
 		}
-		kv.mu.Unlock()
+
+		// 对于需要从其他组拉取数据的 shard，按 group 并发发送 RPC
+		var wg sync.WaitGroup
+		for gid, shardIDs := range groupToShardIDs {
+			servers, ok := lastConfig.Groups[gid]
+			if !ok || len(servers) == 0 {
+				continue
+			}
+			wg.Add(1)
+			go func(gid int, shardIDs []int, servers []string, configNum int) {
+				defer wg.Done()
+				// 构造 GetShard RPC 参数，这里传递需要拉取的 shardIDs 和 configNum（使用当前配置编号）
+				args := GetShardArgs{
+					ConfigNum: configNum,
+					ShardIDs:  shardIDs,
+					Gid:       gid,
+				}
+				// 轮流尝试组内的服务器
+				for _, server := range servers {
+					srv := kv.make_end(server)
+					var reply GetShardReply
+					if ok := srv.Call("ShardKV.GetShard", &args, &reply); ok && reply.Err == OK {
+						// 成功拉取 shard 数据后，通过 Raft 命令插入这些 shard
+						kv.startCmd(NewInsertShardsCommand(&reply))
+						return
+					}
+				}
+			}(gid, shardIDs, servers, currentConfigNum)
+		}
+		wg.Wait()
+
 		time.Sleep(100 * time.Millisecond)
 	}
 }
