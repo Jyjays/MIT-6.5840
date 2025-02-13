@@ -53,11 +53,11 @@ func (kv *StateMachine) apply(op Op) (ShardState, string) {
 		DPrintf("Didn't find shard %v", sid)
 		return Unknown, ""
 	}
-	if shard.State == Serving {
+	if shard.State == Serving || shard.State == GCing {
 		value, flag := shard.apply(op)
 		if flag {
 			// DPrintf("{Server %d} apply %v, value %v", sid, op, value)
-			return Serving, value
+			return shard.State, value
 		} else {
 			return Unknown, ""
 		}

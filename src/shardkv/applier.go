@@ -73,7 +73,7 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	}
 	if state == Unknown {
 		reply.Err = ErrNoKey
-	} else if state == Serving {
+	} else if state == Serving || state == GCing {
 		reply.Err = OK
 		reply.Value = value
 	} else {
@@ -142,7 +142,7 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 	for sid, shardData := range re.Shards {
 		currentState := kv.stateMachine.getShardState(sid)
 		if currentState == Pulling {
-			kv.stateMachine.insertShard(sid, shardData, Serving)
+			kv.stateMachine.insertShard(sid, shardData, GCing)
 		} else {
 			//DPrintf("{Group %v Server %v} Shard %v State %v already processed, skipping\n", kv.gid, kv.me, sid, currentState)
 		}
@@ -184,6 +184,7 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
+	// 如果命令的配置版本比当前配置旧，则认为该命令已经过时，可以直接返回 OK
 	if args.ConfigNum < kv.currentConfig.Num {
 		DPrintf("{Group %v Server %v} applyDeleteShard: config num %v is less than current %v, ignoring\n",
 			kv.gid, kv.me, args.ConfigNum, kv.currentConfig.Num)
@@ -196,8 +197,13 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 	}
 	for _, sid := range args.ShardIDs {
 		shard := kv.stateMachine.getShard(sid)
-		if shard.getShardState() == Sending {
+		shardstate := shard.getShardState()
+		// 根据当前状态执行更新
+		if shardstate == Sending {
+			// 用新的空 shard 或更新状态转为 Serving
 			kv.stateMachine.insertShard(sid, newShard(), Serving)
+		} else if shardstate == GCing {
+			shard.setShardState(Serving)
 		} else {
 			DPrintf("{Group %v Server %v} applyDeleteShard: shard %v state %v, skipping\n",
 				kv.gid, kv.me, sid, shard.getShardState())
