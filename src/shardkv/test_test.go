@@ -3,7 +3,10 @@ package shardkv
 import (
 	"fmt"
 	"io/ioutil"
+	"log"
 	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -534,6 +537,9 @@ func TestConcurrent2_5B(t *testing.T) {
 }
 
 func TestConcurrent3_5B(t *testing.T) {
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 	fmt.Printf("Test (5B): concurrent configuration change and restart...\n")
 
 	cfg := make_config(t, 3, false, 300)

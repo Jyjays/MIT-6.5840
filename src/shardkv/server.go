@@ -2,6 +2,7 @@ package shardkv
 
 import (
 	"log"
+
 	"os"
 	"sync"
 	"sync/atomic"
@@ -211,12 +212,6 @@ func (kv *ShardKV) listenPullingShard() {
 		lastConfig := kv.lastConfig.DeepCopy()
 		currentConfigNum := kv.currentConfig.Num
 		kv.mu.RUnlock()
-
-		// 如果没有需要拉取的 shard，则等待一会再重试
-		if len(groupToShardIDs) == 0 {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
 		DPrintf("{Group %v Server %v} listenPullingShard groupToShardIDs %v\n", kv.gid, kv.me, groupToShardIDs)
 		// 对于需要从其他组拉取数据的 shard，按 group 并发发送 RPC
 		var wg sync.WaitGroup
@@ -246,6 +241,7 @@ func (kv *ShardKV) listenPullingShard() {
 				}
 			}(gid, shardIDs, servers, currentConfigNum)
 		}
+	
 		wg.Wait()
 
 		time.Sleep(100 * time.Millisecond)
@@ -263,7 +259,6 @@ func (kv *ShardKV) listenDeleteShard() {
 		lastConfig := kv.lastConfig.DeepCopy()
 		configNum := kv.currentConfig.Num
 		kv.mu.RUnlock()
-
 		var wg sync.WaitGroup
 		for gid, shardIDs := range gid2shards {
 			servers, ok := lastConfig.Groups[gid]
@@ -289,6 +284,7 @@ func (kv *ShardKV) listenDeleteShard() {
 				}
 			}(shardIDs, servers, configNum)
 		}
+		
 		wg.Wait()
 		time.Sleep(100 * time.Millisecond)
 	}
@@ -461,5 +457,6 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 		file, _ := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 		log.SetOutput(file)
 	}
+
 	return kv
 }
