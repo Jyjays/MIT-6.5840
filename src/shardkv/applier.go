@@ -69,7 +69,8 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 		return reply
 	}
 	if op.Type != "Get" && kv.checkDuplicate(op.ClientID, op.Seq) {
-		reply.Err = kv.lastOperation[op.ClientID].Err
+		//FIXME - duplicate request
+		reply.Err = OK
 		return reply
 	}
 	state, value := kv.stateMachine.apply(*op)
