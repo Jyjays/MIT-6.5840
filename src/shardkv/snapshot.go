@@ -31,8 +31,8 @@ func (kv *ShardKV) restoreSnapshot(snapshot []byte) {
 
 // kvSnapshot has lock
 func (kv *ShardKV) kvSnapshot() {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 	if kv.maxraftstate != -1 && kv.persist.RaftStateSize() > kv.maxraftstate {
 		//DPrintf("server {%d} get snapshot index = %d maxraftstate = %d raftStateSize = %d\n", kv.me, kv.lastApplied, kv.maxraftstate, kv.persist.RaftStateSize())
 		kv.rf.Snapshot(kv.lastApplied, kv.kvEncodeState())

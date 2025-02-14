@@ -6,8 +6,8 @@ type NotifychMsg struct {
 }
 
 func (kv *ShardKV) getNotifyChMsg(index int) chan *NotifychMsg {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 
 	ch, ok := kv.notifyMap[index]
 	if !ok {

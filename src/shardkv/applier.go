@@ -7,8 +7,10 @@ func (kv *ShardKV) applier() {
 		select {
 		case applyMsg := <-kv.applyCh:
 			if applyMsg.CommandValid {
+				kv.mu.Lock()
 				if applyMsg.CommandIndex <= kv.lastApplied {
 					DPrintf("{Server %d} drop command index = %d lastApplied = %d", kv.me, applyMsg.CommandIndex, kv.lastApplied)
+					kv.mu.Unlock()
 					continue
 				}
 				reply := kv.apply(applyMsg.Command)
@@ -18,6 +20,7 @@ func (kv *ShardKV) applier() {
 				}
 				kv.kvSnapshot()
 				kv.lastApplied = applyMsg.CommandIndex
+				kv.mu.Unlock()
 			}
 			if applyMsg.SnapshotValid {
 				kv.mu.Lock()
@@ -56,8 +59,8 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 
 func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	var reply = &NotifychMsg{}
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 
 	sid := key2shard(op.Key)
 	if !kv.shardCanServe(sid) {
@@ -88,7 +91,6 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 
 func (kv *ShardKV) notify(index int, reply *NotifychMsg) {
 	ch := kv.getNotifyChMsg(index)
-
 	if ch != nil {
 		ch <- reply
 	}
@@ -113,21 +115,21 @@ func (kv *ShardKV) updateLastOperation(op *Op, reply *NotifychMsg) {
 }
 
 func (kv *ShardKV) applyConfig(config shardctrler.Config) *NotifychMsg {
-	kv.mu.Lock()
+	//kv.mu.Lock()
 	reply := &NotifychMsg{}
 	if config.Num <= kv.currentConfig.Num {
 		reply.Err = OK
 		return reply
 	}
-	kv.mu.Unlock()
+	// kv.mu.Unlock()
 	kv.processNewConfig(config.DeepCopy())
 
 	reply.Err = OK
 	return reply
 }
 func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 
 	reply := &NotifychMsg{}
 	if re.ConfigNum < kv.currentConfig.Num {
@@ -159,8 +161,8 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 }
 
 func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
 	// 如果传入的 config 版本低于当前版本，则认为这条命令已经过时，不必重复处理
 	if args.ConfigNum < kv.currentConfig.Num {
@@ -183,8 +185,8 @@ func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
 }
 
 func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
-	kv.mu.Lock()
-	defer kv.mu.Unlock()
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
 	reply := &NotifychMsg{}
 	// 如果命令的配置版本比当前配置旧，则认为该命令已经过时，可以直接返回 OK
 	if args.ConfigNum < kv.currentConfig.Num {

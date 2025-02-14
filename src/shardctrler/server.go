@@ -104,12 +104,15 @@ func (sc *ShardCtrler) startOp(op Op) (bool, *NotifychMsg) {
 	var msg *NotifychMsg = nil
 	select {
 	case msg = <-ch:
-		sc.closeNotifyChMsg(index)
+		//sc.closeNotifyChMsg(index)
 
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
 		DPrintf("Server %v startOp timeout index:%v\n", sc.me, index)
-		sc.closeNotifyChMsg(index)
+		//sc.closeNotifyChMsg(index)
 	}
+	go func() {
+		sc.closeNotifyChMsg(index)
+	}()
 	return true, msg
 }
 
