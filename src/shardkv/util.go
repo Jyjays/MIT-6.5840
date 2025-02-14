@@ -2,9 +2,8 @@ package shardkv
 
 import "log"
 
-const Debug = true
-const Output = true
-const GC = false
+const Debug = false
+const Output = false
 
 func DPrintf(format string, a ...interface{}) (n int, err error) {
 	if Debug {

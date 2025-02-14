@@ -100,7 +100,9 @@ func (sc *ShardCtrler) startOp(op Op) (bool, *NotifychMsg) {
 	if !isLeader {
 		return false, nil
 	}
+	sc.mu.Lock()
 	ch := sc.getNotifyChMsg(index)
+	sc.mu.Unlock()
 	var msg *NotifychMsg = nil
 	select {
 	case msg = <-ch:

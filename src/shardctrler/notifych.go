@@ -6,8 +6,8 @@ type NotifychMsg struct {
 }
 
 func (sc *ShardCtrler) getNotifyChMsg(index int) chan *NotifychMsg {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	// sc.mu.Lock()
+	// defer sc.mu.Unlock()
 
 	ch, ok := sc.notifyMap[index]
 	if !ok {

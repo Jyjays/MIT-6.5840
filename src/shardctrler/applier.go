@@ -5,12 +5,14 @@ func (sc *ShardCtrler) applier() {
 		select {
 		case applyMsg := <-sc.applyCh:
 			if applyMsg.CommandValid {
+				sc.mu.Lock()
 				reply := sc.apply(applyMsg.Command)
 				currentTerm, isLeader := sc.rf.GetState()
 
 				if isLeader && applyMsg.CurrentTerm == currentTerm {
 					sc.notify(applyMsg.CommandIndex, reply)
 				}
+				sc.mu.Unlock()
 			}
 		}
 	}
@@ -34,8 +36,8 @@ func (sc *ShardCtrler) apply(cmd interface{}) *NotifychMsg {
 
 func (sc *ShardCtrler) applyLogToStateMachine(op *Op) *NotifychMsg {
 	var reply = &NotifychMsg{}
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	// sc.mu.Lock()
+	// defer sc.mu.Unlock()
 	switch op.Type {
 	case "Join":
 		reply = sc.joinHandler(op)
@@ -60,8 +62,8 @@ func (sc *ShardCtrler) notify(index int, reply *NotifychMsg) {
 }
 
 func (sc *ShardCtrler) updateLastOperation(op *Op, reply *NotifychMsg) {
-	sc.mu.Lock()
-	defer sc.mu.Unlock()
+	// sc.mu.Lock()
+	// defer sc.mu.Unlock()
 	ctx := ReplyContext{
 		Seq:  op.Seq,
 		Type: op.Type,
