@@ -209,7 +209,9 @@ func moveShard(shards [NShards]int, shard int, gid int) [NShards]int {
 //--------------------------------------------
 
 const (
-	OK = "OK"
+	OK             = "OK"
+	ErrTimeout     = "ErrTimeout"
+	ErrWrongLeader = "ErrWrongLeader"
 )
 
 type Err string

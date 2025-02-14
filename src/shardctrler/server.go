@@ -91,6 +91,7 @@ func (sc *ShardCtrler) Query(args *QueryArgs, reply *QueryReply) {
 		reply.WrongLeader = true
 		return
 	}
+
 	reply.Err = msg.Err
 	reply.Config = msg.Config
 }
@@ -111,6 +112,8 @@ func (sc *ShardCtrler) startOp(op Op) (bool, *NotifychMsg) {
 	case <-time.After(timeout * time.Millisecond): // 添加超时处理
 		DPrintf("Server %v startOp timeout index:%v\n", sc.me, index)
 		//sc.closeNotifyChMsg(index)
+		msg = &NotifychMsg{}
+		msg.Err = ErrTimeout
 	}
 	go func() {
 		sc.closeNotifyChMsg(index)
