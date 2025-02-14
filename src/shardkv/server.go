@@ -53,7 +53,7 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 	cmd := NewOperationCommand(&op)
 
 	msg := kv.startCmd(cmd)
-	//DPrintf("{Group %v Server %v} Get:Op %v %v Server ConfigNum: %v\n", kv.gid, kv.me, op, msg, kv.currentConfig.Num)
+	DPrintf("{Group %v Server %v} Get:Op %v %v Server ConfigNum: %v\n", kv.gid, kv.me, op, msg, kv.currentConfig.Num)
 	if msg.Err == OK {
 		reply.Err = OK
 		reply.Value = msg.Value
@@ -63,14 +63,15 @@ func (kv *ShardKV) Get(args *GetArgs, reply *GetReply) {
 }
 
 func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
-	kv.mu.RLock()
-	if kv.checkDuplicate(args.ClientID, args.Seq) {
-		lastOp := kv.lastOperation[args.ClientID]
-		kv.mu.RUnlock()
-		reply.Err = lastOp.Err
-		return
-	}
-	kv.mu.RUnlock()
+	//kv.mu.RLock()
+	// if kv.checkDuplicate(args.ClientID, args.Seq) {
+	// 	lastOp := kv.lastOperation[args.ClientID]
+	// 	kv.mu.RUnlock()
+	// 	reply.Err = lastOp.Err
+	// 	DPrintf("Return here : reply%v\n", reply)
+	// 	return
+	// }
+	//kv.mu.RUnlock()
 	op := Op{
 		Type:     args.Op,
 		Key:      args.Key,
@@ -80,6 +81,7 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	}
 	cmd := NewOperationCommand(&op)
 	msg := kv.startCmd(cmd)
+	DPrintf("{Group %v Server %v} PutAppend:Op %v %v Server ConfigNum: %v\n", kv.gid, kv.me, op, msg, kv.currentConfig.Num)
 	if msg.Err == OK {
 		reply.Err = OK
 	} else {
@@ -241,7 +243,7 @@ func (kv *ShardKV) listenPullingShard() {
 				}
 			}(gid, shardIDs, servers, currentConfigNum)
 		}
-	
+
 		wg.Wait()
 
 		time.Sleep(100 * time.Millisecond)
@@ -284,7 +286,7 @@ func (kv *ShardKV) listenDeleteShard() {
 				}
 			}(shardIDs, servers, configNum)
 		}
-		
+
 		wg.Wait()
 		time.Sleep(100 * time.Millisecond)
 	}

@@ -93,7 +93,7 @@ func (ck *Clerk) Get(key string) string {
 				srv := ck.make_end(servers[si])
 				var reply GetReply
 				ok := srv.Call("ShardKV.Get", &args, &reply)
-				// 如果调用成功且错误为 OK 或 ErrNoKey，说明找到了正确的 leader
+				DPrintf("Get reply %v\n", reply)
 				if ok && (reply.Err == OK || reply.Err == ErrNoKey) {
 					// 更新该组的 leaderId 为成功响应的服务器索引
 					ck.leaderIDs[gid] = si
@@ -134,24 +134,20 @@ func (ck *Clerk) PutAppend(key string, value string, op string) {
 		}
 		if servers, ok := ck.config.Groups[gid]; ok {
 			n := len(servers)
-			// 使用循环队列方式遍历所有服务器
 			for i := 0; i < n; i++ {
-				si := (leaderId + i) % n // 以 leaderId 为起点，循环遍历
+				si := (leaderId + i) % n
 				srv := ck.make_end(servers[si])
 				var reply PutAppendReply
 				ok := srv.Call("ShardKV.PutAppend", &args, &reply)
-				// 如果调用成功且错误为 OK，则说明找到了正确的 leader
+				DPrintf("PutAppend reply %v\n", reply)
 				if ok && reply.Err == OK {
-					// 更新该组的 leaderId 为成功响应的服务器索引
 					ck.leaderIDs[gid] = si
 					return
 				}
-				// 如果返回 ErrWrongGroup，则说明配置可能已经过时，退出当前循环
 				if ok && reply.Err == ErrWrongGroup {
 					ck.leaderIDs[gid] = si
 					break
 				}
-				// 对于 ErrWrongLeader 或调用失败，则继续尝试下一个服务器
 			}
 		}
 		time.Sleep(100 * time.Millisecond)

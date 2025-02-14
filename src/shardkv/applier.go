@@ -142,7 +142,7 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 		reply.Err = ErrWrongConfigNum
 		return reply
 	}
-	DPrintf("{Group %v Server %v} applyInsertShard %v\n", kv.gid, kv.me, re)
+	//DPrintf("{Group %v Server %v} applyInsertShard %v\n", kv.gid, kv.me, re)
 	for sid, shardData := range re.Shards {
 		currentState := kv.stateMachine.getShardState(sid)
 		if currentState == Pulling {
