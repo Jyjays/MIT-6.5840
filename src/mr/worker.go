@@ -52,13 +52,11 @@ func heartbeat(heartbeatArgs *TaskArgs, heartbeatReply *TaskReply, file_name_lis
 // main/mrworker.go calls this function.
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
-
 	heartbeatArgs := TaskArgs{}
 	heartbeatReply := TaskReply{}
 	call("Coordinator.AddWorker", &heartbeatArgs, &heartbeatReply)
 	heartbeatArgs.WorkerId = heartbeatReply.WorkerId
 	heartbeatReply = TaskReply{}
-
 	for {
 		args := TaskArgs{WorkerId: heartbeatArgs.WorkerId}
 		reply := TaskReply{}
@@ -75,10 +73,12 @@ func Worker(mapf func(string, string) []KeyValue,
 			single_thread_map(mapf, &reply, &file_name_list)
 		case REDUCE:
 			// go single_thread_reduce(reducef, &reply)
+			file_name_list := []string{}
 			//file_name_list := []string{}
 			single_thread_reduce(reducef, &reply, &file_name_list)
 		case NONE:
 			// Continue call the coordinator to get the task in case of any worker is down
+			heartbeat(&heartbeatArgs, &heartbeatReply, &file_name_list)
 			//heartbeat(&heartbeatArgs, &heartbeatReply, &file_name_list)
 			if heartbeatReply.WorkerState == Fail || heartbeatReply.WorkerState == Finish {
 				break
@@ -112,7 +112,7 @@ func call(rpcname string, args interface{}, reply interface{}) bool {
 }
 
 func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, file_name_list *[]string) {
-	//fmt.Printf("Map TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
+	fmt.Printf("Map TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
 	delete_tmp_file(reply.TaskId, MAP)
 	intermediate := []KeyValue{}
 	for _, filename := range reply.Files {
@@ -175,7 +175,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 }
 
 func single_thread_reduce(reducef func(string, []string) string, reply *TaskReply, file_name_list *[]string) {
-	//fmt.Printf("Reduce TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
+	fmt.Printf("Reduce TaskId: %d, Worker: %d\n", reply.TaskId, reply.WorkerId)
 	delete_tmp_file(reply.TaskId, REDUCE)
 	inter_file_id := reply.TaskId - reply.Nreduce
 	inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d", inter_file_id))
@@ -245,14 +245,14 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 }
 func delete_tmp_file(taskId int, tasktype Identity) {
 	switch tasktype {
-	case MAP:
-		inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d-*", taskId))
-		if err != nil {
-			log.Fatalf("reduce :cannot read %v", taskId)
-		}
-		for _, filename := range inter_files {
-			os.Remove(filename)
-		}
+	// case MAP:
+	// 	inter_files, err := filepath.Glob(fmt.Sprintf("mr-inter-*-%d-*"))
+	// 	if err != nil {
+	// 		log.Fatalf("reduce :cannot read %v", taskId)
+	// 	}
+	// 	for _, filename := range inter_files {
+	// 		os.Remove(filename)
+	// 	}
 	case REDUCE:
 		oname := fmt.Sprintf("mr-out-%d-*", taskId)
 		os.Remove(oname)
