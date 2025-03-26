@@ -422,6 +422,8 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 	prevLogIndex := rf.nextIndex[peer] - 1
 	firstLogIndex := rf.getFirstLog().Index
 	//DPrintf("prevLogIndex %d, firstLogIndex %d\n", prevLogIndex, firstLogIndex)
+	// 如果 prevLogIndex < firstLogIndex, 则内存中的日志已经被截断了
+	// 需要发送 InstallSnapshot
 	if prevLogIndex < firstLogIndex {
 		// send installsnapshot
 		args := rf.MakeInstallSnapshotArgs()
@@ -446,6 +448,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 	reply := AppendEntriesReply{}
 	if rf.sendAppendEntries(peer, args, &reply) {
 		rf.mu.Lock()
+		// 先检查自己还是不是Leader
 		if args.Term == rf.currentTerm && rf.state == Leader {
 			if !reply.Success {
 				if reply.Term > rf.currentTerm {
@@ -455,23 +458,22 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 				} else if reply.Term == rf.currentTerm {
 					if BackupQuick {
 						if reply.XTerm == -1 {
+							// XTerm == -1 表示没有找到匹配的日志
+							// XLen有两种情况：follower的lastindex + 1，表明follower的日志太短，Leader需要更新nextIndex
+							// 或者是follower的firstLog，表明follower的日志比Leader长，下次
 							rf.nextIndex[peer] = Max(1, reply.XLen) // 确保 `nextIndex` 至少是 1
 						} else {
-							// if reply.XIndex == 0 {
-							// 	flag, last:= rf.findLastLogIndexByTerm(reply.XTerm)
-							// 	if flag {
-							// 		rf.nextIndex[peer] = last + 1
-							// 	} else {
-							// 		rf.nextIndex[peer] = 1
-							// 	}
-
-							// } else {
-							// 	rf.nextIndex[peer] = Max(1, reply.XIndex)
-							// }
+							// XTerm != -1 表示找到了匹配的日志，但是term不匹配
+							// 需要找到这个term的最后一个日志
 							flag, last := rf.findLastLogIndexByTerm(reply.XTerm)
 							if flag {
+								// Leader含有XTerm的日志，从XTerm之后的日志开始覆盖
+								// 在下次发送AppendLogEntiresRPC时，会接着检查prevLogIndex和prevLogTerm是否是XTerm
+								// 如果是，则从XTerm之后的日志开始覆盖
+								// 如果不是，则会接着回退，不用担心XTerm中的日志有冲突的问题。
 								rf.nextIndex[peer] = last + 1
 							} else {
+								// Leader不含XTerm的日志，将整个XTerm的日志都覆盖
 								rf.nextIndex[peer] = Max(1, reply.XIndex)
 							}
 

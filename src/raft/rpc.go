@@ -29,9 +29,9 @@ type AppendEntriesArgs struct {
 
 type AppendEntriesReply struct {
 	Term    int
-	XTerm   int
-	XIndex  int
-	XLen    int
+	XTerm   int // 冲突的term
+	XIndex  int // 冲突的Index
+	XLen    int // 需要的长度
 	Success bool
 }
 
@@ -99,11 +99,14 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 			firstIndex := rf.getFirstLog().Index
 			lastIndex := rf.getLastLog().Index
 			if args.PrevLogIndex > lastIndex {
+				// Follower 日志长度太短，通知 Leader 从lastIndex+1开始
 				reply.XTerm, reply.XIndex, reply.XLen = -1, -1, lastIndex+1
 				// TODO - Add the situation that the leader's log is shorter than the follower's log
 			} else if args.PrevLogIndex >= firstIndex {
+				// PrevLogIndex 在 Follower 的日志范围内，则冲突可能是Term不同
 				reply.XTerm = rf.log[args.PrevLogIndex-firstIndex].Term
 				reply.XIndex = firstIndex
+				// 找到冲突XTerm中的第一个Index
 				for i := args.PrevLogIndex; i >= firstIndex; i-- {
 					if rf.log[i-firstIndex].Term != reply.XTerm {
 						reply.XIndex = i + 1

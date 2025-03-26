@@ -166,7 +166,7 @@ func single_thread_map(mapf func(string, string) []KeyValue, reply *TaskReply, f
 		*file_name_list = []string{}
 		ok := call("Coordinator.FinishTask", &args, re)
 		if re.WorkerState == Fail {
-			os.Exit(1)
+			os.Exit(1) // exit if the worker is failed
 		} else if ok && re.WorkerState == Finish {
 			break
 		}
@@ -210,13 +210,16 @@ func single_thread_reduce(reducef func(string, []string) string, reply *TaskRepl
 	i := 0
 	for i < len(intermediate) {
 		j := i + 1
+		// 计算一个Key的所有Value
 		for j < len(intermediate) && intermediate[j].Key == intermediate[i].Key {
 			j++
 		}
 		values := []string{}
+		// 这里的values是一个slice，存储了所有的Value
 		for k := i; k < j; k++ {
 			values = append(values, intermediate[k].Value)
 		}
+		// 将一个Key的所有Value传入reduce函数
 		output := reducef(intermediate[i].Key, values)
 
 		// this is the correct format for each line of Reduce output.

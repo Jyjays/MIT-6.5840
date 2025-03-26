@@ -28,9 +28,9 @@ const (
 )
 
 type WorkerList struct {
-	workerId        []int
-	workerState     []State
-	work_task_table map[int][]int
+	workerId        []int         // workerId
+	workerState     []State       // worker状态
+	work_task_table map[int][]int // workerId -> taskId
 }
 
 func (w *WorkerList) addTask(workerId int, taskId int) {
@@ -41,17 +41,17 @@ func (w *WorkerList) addTask(workerId int, taskId int) {
 var is_done = false
 
 type Coordinator struct {
-	lock                 sync.Mutex
-	mapSize              int
-	reduceSize           int
-	mapAccessableSize    int
-	reduceAccessableSize int
-	state_lock           sync.Mutex
-	state                []State
-	identity             []Identity
-	locations            []string
-	heartbeatTable       *WorkerHeartbeat
-	workerList           WorkerList
+	lock                 sync.Mutex       // Coordinator临界区锁
+	mapSize              int              // map任务个数
+	reduceSize           int              // reduce任务个数
+	mapAccessableSize    int              // 可分配的map任务个数
+	reduceAccessableSize int              // 可分配的reduce任务个数
+	state_lock           sync.Mutex       // 任务状态锁
+	state                []State          // 任务状态
+	identity             []Identity       // 任务类型
+	locations            []string         // 文件名列表
+	heartbeatTable       *WorkerHeartbeat // 心跳表
+	workerList           WorkerList       // worker列表
 	//intermediate         []KeyValue
 }
 
@@ -103,7 +103,7 @@ func (c *Coordinator) MonitorHeartbeats() {
 		time.Sleep(5 * time.Second)
 		c.heartbeatTable.mu.Lock()
 		for taskId, lastHeartbeat := range c.heartbeatTable.heartbeats {
-			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout {
+			if time.Since(lastHeartbeat) > c.heartbeatTable.timeout { // Heartbeat timeout
 				c.state_lock.Lock()
 				if c.state[taskId] != Finish && c.state[taskId] != Free {
 					c.state[taskId] = Free
@@ -121,6 +121,7 @@ func (c *Coordinator) MonitorHeartbeats() {
 	}
 }
 
+// 添加worker配置
 func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
 	c.lock.Lock()
 	defer c.lock.Unlock()
@@ -133,6 +134,7 @@ func (c *Coordinator) AddWorker(args *TaskArgs, reply *TaskReply) error {
 }
 
 // Wait all the type of task to be finished
+// if the task is not finished, return false
 func (c *Coordinator) WaitTask(taskType Identity) bool {
 
 	for i, identity := range c.identity {
@@ -236,7 +238,7 @@ func (c *Coordinator) FinishTask(args *TaskArgs, reply *TaskReply) error {
 		c.state[args.TaskId] = Finish
 		reply.WorkerState = Finish
 	} else {
-		reply.WorkerState = Fail
+		reply.WorkerState = Fail // 如果state[args.TaskId] == Free, 说明worker已经被kill，原先的任务作废
 	}
 	// workerList.work_task_table[args.WorkerId] = workerList.work_task_table[args.WorkerId][1:]
 	//reply.TaskType = NONE
