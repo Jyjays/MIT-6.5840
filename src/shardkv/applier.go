@@ -46,9 +46,6 @@ func (kv *ShardKV) apply(cmd interface{}) *NotifychMsg {
 		reply = kv.applyConfig(cfg)
 	case InsertShard:
 		reply = kv.applyInsertShard(command.Data.(GetShardReply))
-	case UpdateShard:
-		DPrintf("{Group %v Server %v} applyUpdateShard %v\n", kv.gid, kv.me, command.Data)
-		reply = kv.applyUpdateShard(command.Data.(UpdateShardState))
 	case DeleteShard:
 		reply = kv.applyDeleteShard(command.Data.(DeleteShardArgs))
 	case EmptyLog:
@@ -74,9 +71,10 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 		return reply
 	}
 	state, value := kv.stateMachine.apply(*op)
-	if op.Type != "Get" {
-		kv.updateLastOperation(op, reply)
-	}
+	// FIXME - Wrong order to update lastOperation
+	// if op.Type != "Get" {
+	// 	kv.updateLastOperation(op, reply)
+	// }
 	if state == Unknown {
 		reply.Err = ErrNoKey
 	} else if state == Serving || state == GCing {
@@ -85,6 +83,9 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 	} else {
 		DPrintf("P2 {Group %v Server %v} Shard %v State %v, cannot serve\n", kv.gid, kv.me, sid, state)
 		reply.Err = ErrWrongGroup
+	}
+	if op.Type != "Get" {
+		kv.updateLastOperation(op, reply)
 	}
 	//DPrintf("{Group %v Server %v} apply op %v, reply %v sid %v \n", kv.gid, kv.me, op, reply, sid)
 	return reply
@@ -139,7 +140,7 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 		reply.Err = OK
 		return reply
 	}
-	if re.ConfigNum != kv.currentConfig.Num {
+	if re.ConfigNum > kv.currentConfig.Num {
 		reply.Err = ErrWrongConfigNum
 		return reply
 	}
@@ -147,6 +148,7 @@ func (kv *ShardKV) applyInsertShard(re GetShardReply) *NotifychMsg {
 	for sid, shardData := range re.Shards {
 		currentState := kv.stateMachine.getShardState(sid)
 		if currentState == Pulling {
+			// NOTE - 如果当前状态是 Pulling，说明这个 shard 还没有被处理过
 			kv.stateMachine.insertShard(sid, shardData, GCing)
 		} else {
 			//DPrintf("{Group %v Server %v} Shard %v State %v already processed, skipping\n", kv.gid, kv.me, sid, currentState)
@@ -172,7 +174,7 @@ func (kv *ShardKV) applyUpdateShard(args UpdateShardState) *NotifychMsg {
 		reply.Err = OK
 		return reply
 	}
-	if args.ConfigNum != kv.currentConfig.Num {
+	if args.ConfigNum > kv.currentConfig.Num {
 		reply.Err = ErrWrongGroup
 		return reply
 	}
@@ -196,7 +198,7 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 		reply.Err = OK
 		return reply
 	}
-	if args.ConfigNum != kv.currentConfig.Num {
+	if args.ConfigNum > kv.currentConfig.Num {
 		reply.Err = ErrWrongGroup
 		return reply
 	}
@@ -205,7 +207,7 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 		shardstate := shard.getShardState()
 		// 根据当前状态执行更新
 		if shardstate == Sending {
-			// 用新的空 shard 或更新状态转为 Serving
+			// 原shard状态是Sending，收到Delete的时候，说明这个shard已经被删除了
 			kv.stateMachine.insertShard(sid, newShard(), Serving)
 		} else if shardstate == GCing {
 			shard.setShardState(Serving)
@@ -216,4 +218,54 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 	}
 	reply.Err = OK
 	return reply
+}
+
+func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
+	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
+	// toBeInsertedShards := make(map[int]*Shard)
+	// kv.mu.Lock()
+	// defer kv.mu.Unlock()
+	if config.Num != kv.currentConfig.Num+1 {
+		return // 拒绝跳跃式配置更新
+	} else {
+		kv.lastConfig = kv.currentConfig.DeepCopy()
+		kv.currentConfig = config
+	}
+	// if !kv.isLeader() {
+	// 	return
+	// }
+
+	oldShards := kv.lastConfig.Shards
+	newShards := kv.currentConfig.Shards
+	// 持有者 -> 要拉取的shards
+	//pullMap := make(map[int][]int)
+	//sendMap := make(map[int][]int)
+	DPrintf("{Group %v Server %v} newconfig %v\n", kv.gid, kv.me, config)
+	for sid := 0; sid < shardctrler.NShards; sid++ {
+		newgid := newShards[sid]
+		oldgid := oldShards[sid]
+		if newgid == kv.gid {
+			if oldgid != kv.gid {
+				// 仅当旧配置中的分片不属于当前组时设为 Pulling
+				if oldgid != 0 && oldgid != kv.gid {
+					kv.stateMachine.setShardState(sid, Pulling)
+					//pullArray = append(pullArray, sid)
+					//DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, sid)
+				} else {
+					// 旧配置中分片已属于当前组，直接设为 Serving
+					kv.stateMachine.setShardState(sid, Serving)
+					//serveArray = append(serveArray, sid)
+				}
+			}
+		} else if newgid != kv.gid {
+			if oldgid == kv.gid {
+				if oldgid != 0 {
+					kv.stateMachine.setShardState(sid, Sending)
+					//sendArray = append(sendArray, sid)
+				}
+
+			}
+		}
+	}
+
 }

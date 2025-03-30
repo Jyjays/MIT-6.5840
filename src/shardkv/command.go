@@ -13,9 +13,9 @@ const (
 	Operation   cmd = "Operation"
 	AddConfig       = "AddConfig"
 	InsertShard     = "InsertShard"
-	UpdateShard     = "UpdateShard"
-	DeleteShard     = "DeleteShard"
-	EmptyLog        = "EmptyLog"
+	//UpdateShard     = "UpdateShard"
+	DeleteShard = "DeleteShard"
+	EmptyLog    = "EmptyLog"
 )
 
 // NewConfigCommand 添加新配置的命令
@@ -32,9 +32,9 @@ func NewInsertShardsCommand(reply *GetShardReply) Command {
 	return Command{Type: InsertShard, Data: *reply}
 }
 
-func NewUpdateShardsCommand(args *UpdateShardState) Command {
-	return Command{Type: UpdateShard, Data: *args}
-}
+// func NewUpdateShardsCommand(args *UpdateShardState) Command {
+// 	return Command{Type: UpdateShard, Data: *args}
+// }
 
 func NewDeleteShardsCommand(args *DeleteShardArgs) Command {
 	return Command{Type: DeleteShard, Data: *args}

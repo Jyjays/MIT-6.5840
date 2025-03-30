@@ -35,7 +35,7 @@ type ShardKV struct {
 	mck          *shardctrler.Clerk
 	// Your definitions here.
 	currentConfig shardctrler.Config
-	lastConfig    shardctrler.Config
+	lastConfig    shardctrler.Config // 暂存一下上一个配置，当发送Delete等信号时，需要对其进行深拷贝，防止并发问题
 	lastApplied   int
 	stateMachine  *StateMachine
 	lastOperation map[int64]ReplyContext
@@ -188,6 +188,7 @@ func (kv *ShardKV) listenConfig() {
 		currentNum := kv.currentConfig.Num
 		kv.mu.RUnlock()
 		if flag {
+			// NOTE - 调用Query获取最新配置
 			config := kv.mck.Query(currentNum + 1)
 			if config.Num == currentNum+1 {
 				cmd := NewConfigCommand(&config)
@@ -305,55 +306,6 @@ func (kv *ShardKV) listenCurrentTermLog() {
 	}
 }
 
-func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
-	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
-	// toBeInsertedShards := make(map[int]*Shard)
-	// kv.mu.Lock()
-	// defer kv.mu.Unlock()
-	if config.Num != kv.currentConfig.Num+1 {
-		return // 拒绝跳跃式配置更新
-	} else {
-		kv.lastConfig = kv.currentConfig.DeepCopy()
-		kv.currentConfig = config
-	}
-	// if !kv.isLeader() {
-	// 	return
-	// }
-
-	oldShards := kv.lastConfig.Shards
-	newShards := kv.currentConfig.Shards
-	// 持有者 -> 要拉取的shards
-	//pullMap := make(map[int][]int)
-	//sendMap := make(map[int][]int)
-	DPrintf("{Group %v Server %v} newconfig %v\n", kv.gid, kv.me, config)
-	for sid := 0; sid < shardctrler.NShards; sid++ {
-		newgid := newShards[sid]
-		oldgid := oldShards[sid]
-		if newgid == kv.gid {
-			if oldgid != kv.gid {
-				// 仅当旧配置中的分片不属于当前组时设为 Pulling
-				if oldgid != 0 && oldgid != kv.gid {
-					kv.stateMachine.setShardState(sid, Pulling)
-					//pullArray = append(pullArray, sid)
-					//DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, sid)
-				} else {
-					// 旧配置中分片已属于当前组，直接设为 Serving
-					kv.stateMachine.setShardState(sid, Serving)
-					//serveArray = append(serveArray, sid)
-				}
-			}
-		} else if newgid != kv.gid {
-			if oldgid == kv.gid {
-				if oldgid != 0 {
-					kv.stateMachine.setShardState(sid, Sending)
-					//sendArray = append(sendArray, sid)
-				}
-
-			}
-		}
-	}
-
-}
 func (kv *ShardKV) shardCanServe(sid int) bool {
 	shard := kv.stateMachine.getShard(sid)
 	if shard != nil {
