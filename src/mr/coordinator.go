@@ -153,7 +153,7 @@ func (c *Coordinator) WaitTask(taskType Identity) bool {
 	return true
 }
 
-func (c *Coordinator) getAccessiableWorker(taskType Identity) int {
+func (c *Coordinator) getAvailableTask(taskType Identity) int {
 	c.state_lock.Lock()
 	defer c.state_lock.Unlock()
 	for i, state := range c.state {
@@ -180,7 +180,7 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 	}
 	if c.mapAccessableSize > 0 {
 		reply.Nreduce = c.reduceSize
-		reply.TaskId = c.getAccessiableWorker(MAP)
+		reply.TaskId = c.getAvailableTask(MAP)
 		if reply.TaskId == -1 {
 			reply.TaskType = NONE
 			return nil
@@ -204,7 +204,7 @@ func (c *Coordinator) GetTask(args *TaskArgs, reply *TaskReply) error {
 			reply.TaskType = NONE
 			return nil
 		}
-		reply.TaskId = c.getAccessiableWorker(REDUCE)
+		reply.TaskId = c.getAvailableTask(REDUCE)
 		if reply.TaskId == -1 {
 			reply.TaskType = NONE
 			return nil
