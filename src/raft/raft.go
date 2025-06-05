@@ -35,7 +35,7 @@ import (
 
 // as each Raft peer becomes aware that successive log Entries are
 // committed, the peer should send an ApplyMsg to the service (or
-// tester) on the same server, via the applyCh passed to Make(). set
+// tester) on the same server, via the passed to Make(). set
 // CommandValid to true to indicate that the ApplyMsg contains a newly
 // committed log entry.
 //
@@ -121,9 +121,9 @@ func (rf *Raft) GetState() (int, bool) {
 func (rf *Raft) encodeState() []byte {
 	w := new(bytes.Buffer)
 	e := labgob.NewEncoder(w)
-	e.Encode(rf.currentTerm)
-	e.Encode(rf.voteFor)
-	e.Encode(rf.log)
+	if e.Encode(rf.currentTerm) != nil || e.Encode(rf.voteFor) != nil || e.Encode(rf.log) != nil {
+		return nil
+	}
 	return w.Bytes()
 }
 
@@ -140,7 +140,7 @@ func (rf *Raft) persist() {
 
 // restore previously persisted state.
 func (rf *Raft) readPersist(data []byte) {
-	if data == nil || len(data) < 1 { // bootstrap without any state?
+	if len(data) < 1 { // bootstrap without any state?
 		return
 	}
 	r := bytes.NewBuffer(data)
@@ -208,6 +208,10 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	//DPrintf("Node %d: Log %v Index %d Term %d\n", rf.me, rf.log, index, term)
 	rf.nextIndex[rf.me] = index + 1
 	rf.matchIndex[rf.me] = index
+	if rf.checkNeedCommit() {
+		rf.applyCond.Signal()
+	}
+	// NOTE - 创建协程进行复制，不会阻塞Leader继续接收日志
 	go func() {
 		for i := range rf.peers {
 			if i == rf.me {
@@ -220,7 +224,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 }
 
 func (rf *Raft) applier() {
-	for rf.killed() == false {
+	for !rf.killed() {
 		rf.mu.Lock()
 		// check the commitIndex is advanced
 		for rf.commitIndex <= rf.lastApplied {
@@ -263,17 +267,17 @@ func (rf *Raft) needReplicating(peer int) bool {
 func (rf *Raft) replicator(peer int) {
 	rf.replicateCond[peer].L.Lock()
 	defer rf.replicateCond[peer].L.Unlock()
-	for rf.killed() == false {
-		for rf.needReplicating(peer) == false {
+	for !rf.killed() {
+		for !rf.needReplicating(peer) {
 			rf.replicateCond[peer].Wait()
 		}
 		rf.SendHeartbeatOrLogs(peer)
 
-		rf.mu.Lock()
-		if rf.checkNeedCommit() {
-			rf.applyCond.Signal()
-		}
-		rf.mu.Unlock()
+		// rf.mu.Lock()
+		// if rf.checkNeedCommit() {
+		// 	rf.applyCond.Signal()
+		// }
+		// rf.mu.Unlock()
 	}
 }
 
@@ -293,7 +297,7 @@ func (rf *Raft) checkNeedCommit() bool {
 	copy(matchIndex, rf.matchIndex)
 	sort.Ints(matchIndex)
 
-	// 确保有多数派
+	// 确保有多数派，至少有过半的节点大于quorumIndex
 	quorumIndex := matchIndex[length-length/2-1]
 	firstIndex := rf.getFirstLog().Index
 	//DPrintf("Node %d: quorumIndex %d, commitIndex %d, term %d\n", rf.me, quorumIndex, rf.commitIndex, rf.currentTerm)
@@ -334,7 +338,7 @@ func (rf *Raft) ticker() {
 		defer logFile.Close()
 		log.SetOutput(logFile)
 	}
-	for rf.killed() == false {
+	for !rf.killed() {
 		select {
 		case <-rf.electionTimer.C:
 			rf.mu.Lock()
@@ -422,7 +426,7 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 	prevLogIndex := rf.nextIndex[peer] - 1
 	firstLogIndex := rf.getFirstLog().Index
 	//DPrintf("prevLogIndex %d, firstLogIndex %d\n", prevLogIndex, firstLogIndex)
-	// 如果 prevLogIndex < firstLogIndex, 则内存中的日志已经被截断了
+	// 如果 prevLogIndex < firstLogIndex, 则内存中的日志已经被截断了，Follower的状态过于落后，
 	// 需要发送 InstallSnapshot
 	if prevLogIndex < firstLogIndex {
 		// send installsnapshot
@@ -485,6 +489,9 @@ func (rf *Raft) SendHeartbeatOrLogs(peer int) {
 			} else {
 				rf.matchIndex[peer] = args.PrevLogIndex + len(args.Entries)
 				rf.nextIndex[peer] = rf.matchIndex[peer] + 1
+				if rf.checkNeedCommit() {
+					rf.applyCond.Signal()
+				}
 			}
 		}
 

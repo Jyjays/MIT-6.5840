@@ -1,5 +1,7 @@
 package raft
 
+import "fmt"
+
 // example RequestVote RPC arguments structure.
 // field names must start with capital letters!
 type RequestVoteArgs struct {
@@ -93,10 +95,11 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 	rf.resetElectionTimer()
 	// check the log is matched, if not, return the conflict index and term
 	// if an existing entry conflicts with a new one (same index but different terms), delete the existing entry and all that follow it(§5.3)
+	firstIndex := rf.getFirstLog().Index
 	if !rf.isMatched(args.PrevLogIndex, args.PrevLogTerm) {
 		if BackupQuick {
 			reply.Term, reply.Success = rf.currentTerm, false
-			firstIndex := rf.getFirstLog().Index
+
 			lastIndex := rf.getLastLog().Index
 			if args.PrevLogIndex > lastIndex {
 				// Follower 日志长度太短，通知 Leader 从lastIndex+1开始
@@ -123,22 +126,23 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		return
 	}
 
-	firstLogIndex := rf.getFirstLog().Index
 	for index, entry := range args.Entries {
-		if entry.Index < firstLogIndex {
+		if entry.Index < firstIndex {
+			fmt.Println("entry.Index < firstIndex", entry.Index, firstIndex)
 			continue
 		}
-		if entry.Index-firstLogIndex >= len(rf.log) || rf.log[entry.Index-firstLogIndex].Term != entry.Term {
-			if entry.Index-firstLogIndex >= len(rf.log) {
+		if entry.Index-firstIndex >= len(rf.log) || rf.log[entry.Index-firstIndex].Term != entry.Term {
+			if entry.Index-firstIndex >= len(rf.log) {
 				rf.log = append(rf.log, args.Entries[index:]...)
 			} else {
-				rf.log = append(rf.log[:entry.Index-firstLogIndex], args.Entries[index:]...)
+				rf.log = append(rf.log[:entry.Index-firstIndex], args.Entries[index:]...)
 			}
 			//NOTE - slice is based on array, in the memory, we need to check whether the size of array is too large to store the data
 			rf.log = shrinkEntries(rf.log)
 			rf.persist()
 			break
 		}
+		// fmt.Println("entry.Index", entry.Index)
 	}
 
 	newCommitIndex := Min(args.LeaderCommit, rf.getLastLog().Index)
