@@ -55,6 +55,13 @@ func (kv *KVServer) Get(args *GetArgs, reply *GetReply) {
 	// Get操作如果不按照论文的方法实现的话就要严格
 	// 进行Duplicate检查，防止宕机重启后的get操作
 	// 在恢复操作的前面导致找不到key
+	// if kv.checkDuplicate(args.ClientID, args.Seq) {
+	// 	lastOp := kv.LastOperation[args.ClientID]
+	// 	reply.Err = lastOp.Err
+	// 	reply.Value = lastOp.Value
+	// 	return
+	// }
+
 	op := Op{
 		Type:     "Get",
 		Key:      args.Key,
@@ -79,11 +86,11 @@ func (kv *KVServer) Put(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	if kv.checkDuplicate(args.ClientID, args.Seq) {
-		lastOp := kv.LastOperation[args.ClientID]
-		reply.Err = lastOp.Err
-		return
-	}
+	// if kv.checkDuplicate(args.ClientID, args.Seq) {
+	// 	lastOp := kv.LastOperation[args.ClientID]
+	// 	reply.Err = lastOp.Err
+	// 	return
+	// }
 	oper := Op{
 		Type:     "Put",
 		Key:      args.Key,
@@ -106,11 +113,11 @@ func (kv *KVServer) Append(args *PutAppendArgs, reply *PutAppendReply) {
 		reply.Err = ErrWrongLeader
 		return
 	}
-	if kv.checkDuplicate(args.ClientID, args.Seq) {
-		lastOp := kv.LastOperation[args.ClientID]
-		reply.Err = lastOp.Err
-		return
-	}
+	// if kv.checkDuplicate(args.ClientID, args.Seq) {
+	// 	lastOp := kv.LastOperation[args.ClientID]
+	// 	reply.Err = lastOp.Err
+	// 	return
+	// }
 	oper := Op{
 		Type:     "Append",
 		Key:      args.Key,
