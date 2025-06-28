@@ -1,12 +1,23 @@
 package shardkv
 
-import "6.5840/shardctrler"
+import (
+	"fmt"
+	"6.5840/shardctrler"
+)
 
 func (kv *ShardKV) applier() {
+	monitor := GetMonitor()
+
 	for !kv.killed() {
 		select {
 		case applyMsg := <-kv.applyCh:
 			if applyMsg.CommandValid {
+				// 记录Raft日志应用事件
+				monitor.LogEvent("RAFT", kv.gid, kv.me, fmt.Sprintf("Applying command at index %d", applyMsg.CommandIndex), map[string]interface{}{
+					"commandIndex": applyMsg.CommandIndex,
+					"currentTerm":  applyMsg.CurrentTerm,
+				})
+
 				kv.mu.Lock()
 				if applyMsg.CommandIndex <= kv.lastApplied {
 					DPrintf("{Server %d} drop command index = %d lastApplied = %d", kv.me, applyMsg.CommandIndex, kv.lastApplied)
@@ -20,13 +31,30 @@ func (kv *ShardKV) applier() {
 				}
 				kv.kvSnapshot()
 				kv.lastApplied = applyMsg.CommandIndex
+
+				// 记录状态机更新事件
+				monitor.LogEvent("RAFT", kv.gid, kv.me, fmt.Sprintf("Command applied successfully at index %d", applyMsg.CommandIndex), map[string]interface{}{
+					"lastApplied": kv.lastApplied,
+					"isLeader":    isLeader,
+					"term":        currentTerm,
+				})
+
 				kv.mu.Unlock()
 			}
 			if applyMsg.SnapshotValid {
+				// 记录快照应用事件
+				monitor.LogEvent("RAFT", kv.gid, kv.me, fmt.Sprintf("Applying snapshot at index %d", applyMsg.SnapshotIndex), map[string]interface{}{
+					"snapshotIndex": applyMsg.SnapshotIndex,
+				})
+
 				kv.mu.Lock()
 				if applyMsg.SnapshotIndex > kv.lastApplied {
 					kv.restoreSnapshot(applyMsg.Snapshot)
 					kv.lastApplied = applyMsg.SnapshotIndex
+
+					monitor.LogEvent("RAFT", kv.gid, kv.me, "Snapshot restored successfully", map[string]interface{}{
+						"lastApplied": kv.lastApplied,
+					})
 				}
 				kv.mu.Unlock()
 			}
@@ -221,25 +249,20 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 }
 
 func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
-	//三种情况：1.旧配置中有，新配置中没有，删除；2.旧配置中没有，新配置中有，增加；3.旧配置中有，新配置中有，不变
-	// toBeInsertedShards := make(map[int]*Shard)
-	// kv.mu.Lock()
-	// defer kv.mu.Unlock()
-	if config.Num != kv.currentConfig.Num+1 {
-		return // 拒绝跳跃式配置更新
-	} else {
-		kv.lastConfig = kv.currentConfig.DeepCopy()
-		kv.currentConfig = config
-	}
-	// if !kv.isLeader() {
-	// 	return
-	// }
-
-	oldShards := kv.lastConfig.Shards
-	newShards := kv.currentConfig.Shards
-	// 持有者 -> 要拉取的shards
-	//pullMap := make(map[int][]int)
-	//sendMap := make(map[int][]int)
+	monitor := GetMonitor()
+	
+	oldShards := kv.currentConfig.Shards
+	newShards := config.Shards
+	kv.lastConfig = kv.currentConfig.DeepCopy()
+	kv.currentConfig = config.DeepCopy()
+	
+	monitor.LogEvent("CONFIG", kv.gid, kv.me, fmt.Sprintf("Processing config change: %d -> %d", kv.lastConfig.Num, config.Num), map[string]interface{}{
+		"oldConfigNum": kv.lastConfig.Num,
+		"newConfigNum": config.Num,
+		"oldShards": oldShards,
+		"newShards": newShards,
+	})
+	
 	DPrintf("{Group %v Server %v} newconfig %v\n", kv.gid, kv.me, config)
 	for sid := 0; sid < shardctrler.NShards; sid++ {
 		newgid := newShards[sid]
@@ -249,11 +272,23 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 				// 仅当旧配置中的分片不属于当前组时设为 Pulling
 				if oldgid != 0 && oldgid != kv.gid {
 					kv.stateMachine.setShardState(sid, Pulling)
+					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Pulling", sid), map[string]interface{}{
+						"shardId": sid,
+						"oldGid": oldgid,
+						"newGid": newgid,
+						"state": "Pulling",
+					})
 					//pullArray = append(pullArray, sid)
 					//DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, sid)
 				} else {
 					// 旧配置中分片已属于当前组，直接设为 Serving
 					kv.stateMachine.setShardState(sid, Serving)
+					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Serving", sid), map[string]interface{}{
+						"shardId": sid,
+						"oldGid": oldgid,
+						"newGid": newgid,
+						"state": "Serving",
+					})
 					//serveArray = append(serveArray, sid)
 				}
 			}
@@ -261,6 +296,12 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 			if oldgid == kv.gid {
 				if oldgid != 0 {
 					kv.stateMachine.setShardState(sid, Sending)
+					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Sending", sid), map[string]interface{}{
+						"shardId": sid,
+						"oldGid": oldgid,
+						"newGid": newgid,
+						"state": "Sending",
+					})
 					//sendArray = append(sendArray, sid)
 				}
 

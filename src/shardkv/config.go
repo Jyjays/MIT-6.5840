@@ -1,21 +1,27 @@
 package shardkv
 
-import "6.5840/shardctrler"
-import "6.5840/labrpc"
-import "testing"
-import "os"
+import (
+	"context"
+	"net/http"
+	"os"
+	"testing"
 
-// import "log"
-import crand "crypto/rand"
-import "math/big"
-import "math/rand"
-import "encoding/base64"
-import "sync"
-import "runtime"
-import "6.5840/raft"
-import "strconv"
-import "fmt"
-import "time"
+	"6.5840/labrpc"
+	"6.5840/shardctrler"
+
+	// import "log"
+	crand "crypto/rand"
+	"encoding/base64"
+	"fmt"
+	"math/big"
+	"math/rand"
+	"runtime"
+	"strconv"
+	"sync"
+	"time"
+
+	"6.5840/raft"
+)
 
 func randstring(n int) string {
 	b := make([]byte, 2*n)
@@ -73,6 +79,12 @@ type config struct {
 	clerks       map[*Clerk][]string
 	nextClientId int
 	maxraftstate int
+
+	// 监控服务相关
+	monitorServer *http.Server
+	monitorCtx    context.Context
+	monitorCancel context.CancelFunc
+	monitor       *Monitor
 }
 
 func (cfg *config) checkTimeout() {
@@ -83,6 +95,9 @@ func (cfg *config) checkTimeout() {
 }
 
 func (cfg *config) cleanup() {
+	// 停止监控服务
+	cfg.stopMonitor()
+
 	for gi := 0; gi < cfg.ngroups; gi++ {
 		cfg.ShutdownGroup(gi)
 	}
@@ -398,5 +413,34 @@ func make_config(t *testing.T, n int, unreliable bool, maxraftstate int) *config
 
 	cfg.net.Reliable(!unreliable)
 
+	// 启动监控服务
+	cfg.startMonitor()
+
 	return cfg
+}
+
+// 启动监控服务
+func (cfg *config) startMonitor() {
+	if cfg.monitor != nil {
+		return // 已经启动
+	}
+
+	cfg.monitor = NewMonitor(8080)
+
+	// 启动 Web 服务器
+	go cfg.monitor.StartWebServer()
+
+	// 等待一点时间确保服务器启动
+	time.Sleep(100 * time.Millisecond)
+	fmt.Printf("监控服务器启动在 http://localhost:8080\n")
+}
+
+// 停止监控服务
+func (cfg *config) stopMonitor() {
+	if cfg.monitor == nil {
+		return
+	}
+
+	// 将监控器设为 nil，停止使用
+	cfg.monitor = nil
 }

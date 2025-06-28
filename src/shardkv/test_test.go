@@ -1024,3 +1024,130 @@ func TestChallenge2Partial(t *testing.T) {
 
 	fmt.Printf("  ... Passed\n")
 }
+
+// TestContinuousStable 持续稳定运行的测试，客户端定期发送请求
+// 此测试会一直运行直到手动终止
+func TestContinuousStable(t *testing.T) {
+	fmt.Printf("Test: Continuous Stable Operations - 持续稳定运行测试 ...\n")
+	fmt.Printf("提示：此测试会持续运行，按 Ctrl+C 终止\n")
+
+	cfg := make_config(t, 3, false, -1)
+	defer cfg.cleanup()
+
+	ck := cfg.makeClient(cfg.ctl)
+
+	// 启动所有三个组
+	cfg.join(0)
+	cfg.join(1)
+	cfg.join(2)
+
+	fmt.Printf("集群已启动，3个组都已加入\n")
+	fmt.Printf("监控地址: http://localhost:8080\n")
+
+	// 初始化一些键值对，使用不同的首字符以分布到不同分片
+	n := 20
+	ka := make([]string, n)
+	va := make([]string, n)
+	// 使用不同的首字符确保键分布到不同分片
+	prefixes := []string{"a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "o", "p", "q", "r", "s", "t"}
+	for i := 0; i < n; i++ {
+		ka[i] = fmt.Sprintf("%s_key_%d", prefixes[i], i)
+		va[i] = fmt.Sprintf("initial_value_%d", i)
+		ck.Put(ka[i], va[i])
+		// 打印分片信息以便调试
+		shard := int(ka[i][0]) % 10
+		fmt.Printf("键 %s 映射到分片 %d\n", ka[i], shard)
+	}
+
+	fmt.Printf("已初始化 %d 个键值对\n", n)
+
+	// 验证初始化
+	for i := 0; i < n; i++ {
+		check(t, ck, ka[i], va[i])
+	}
+
+	fmt.Printf("初始化验证完成，开始持续操作...\n")
+
+	// 操作计数器
+	var opCount int64
+	startTime := time.Now()
+
+	// 持续运行循环
+	for {
+		// 随机选择操作类型
+		opType := rand.Intn(3) // 0=Get, 1=Put, 2=Append
+		keyIndex := rand.Intn(n)
+		key := ka[keyIndex]
+
+		switch opType {
+		case 0: // Get操作
+			value := ck.Get(key)
+			atomic.AddInt64(&opCount, 1)
+			if atomic.LoadInt64(&opCount)%100 == 0 {
+				elapsed := time.Since(startTime)
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Get(%s) = %s\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, value[:min(20, len(value))])
+			}
+
+		case 1: // Put操作
+			newValue := fmt.Sprintf("value_%d_at_%d", keyIndex, time.Now().Unix())
+			ck.Put(key, newValue)
+			va[keyIndex] = newValue
+			atomic.AddInt64(&opCount, 1)
+			if atomic.LoadInt64(&opCount)%100 == 0 {
+				elapsed := time.Since(startTime)
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Put(%s, %s)\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, newValue[:min(20, len(newValue))])
+			}
+
+		case 2: // Append操作
+			appendValue := fmt.Sprintf("_append_%d", time.Now().Unix()%1000)
+			ck.Append(key, appendValue)
+			va[keyIndex] += appendValue
+			atomic.AddInt64(&opCount, 1)
+			if atomic.LoadInt64(&opCount)%100 == 0 {
+				elapsed := time.Since(startTime)
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Append(%s, %s)\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, appendValue)
+			}
+		}
+
+		// 每隔一段时间进行一致性检查
+		if atomic.LoadInt64(&opCount)%500 == 0 {
+			fmt.Printf("执行一致性检查...\n")
+			// 验证几个随机键的一致性
+			for i := 0; i < 5; i++ {
+				checkIndex := rand.Intn(n)
+				actualValue := ck.Get(ka[checkIndex])
+				if actualValue != va[checkIndex] {
+					t.Fatalf("一致性检查失败: key=%s, expected=%s, actual=%s",
+						ka[checkIndex], va[checkIndex], actualValue)
+				}
+			}
+			fmt.Printf("一致性检查通过\n")
+		}
+
+		// 每隔一段时间显示统计信息
+		if atomic.LoadInt64(&opCount)%1000 == 0 {
+			elapsed := time.Since(startTime)
+			rate := float64(atomic.LoadInt64(&opCount)) / elapsed.Seconds()
+			fmt.Printf("=== 统计信息 ===\n")
+			fmt.Printf("总操作数: %d\n", atomic.LoadInt64(&opCount))
+			fmt.Printf("运行时间: %v\n", elapsed.Truncate(time.Second))
+			fmt.Printf("操作速率: %.2f ops/sec\n", rate)
+			fmt.Printf("监控地址: http://localhost:8080\n")
+			fmt.Printf("===============\n")
+		}
+
+		// 控制操作频率，避免过快
+		time.Sleep(time.Duration(50+rand.Intn(100)) * time.Millisecond)
+	}
+}
+
+// 辅助函数：返回两个数中的较小值
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
