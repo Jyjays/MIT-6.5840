@@ -180,32 +180,81 @@ func (m *Monitor) handleIndex(w http.ResponseWriter, r *http.Request) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ShardKV Monitor</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .panel { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .server-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 15px; }
-        .server-card { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 6px; padding: 15px; }
-        .server-card.leader { border-left: 4px solid #28a745; }
-        .server-card.follower { border-left: 4px solid #6c757d; }
-        .shard { display: inline-block; margin: 2px; padding: 4px 8px; border-radius: 4px; font-size: 12px; }
-        .shard.serving { background-color: #d4edda; color: #155724; }
-        .shard.pulling { background-color: #fff3cd; color: #856404; }
-        .shard.sending { background-color: #cce5ff; color: #004085; }
-        .shard.gcing { background-color: #f8d7da; color: #721c24; }
-        .event { padding: 8px; margin: 4px 0; border-radius: 4px; font-size: 14px; }
-        .event.raft { background-color: #e3f2fd; }
-        .event.shard { background-color: #f3e5f5; }
-        .event.config { background-color: #e8f5e8; }
-        .event.client { background-color: #fff3e0; }
-        .timestamp { color: #666; font-size: 12px; }
-        .status-indicator { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; }
-        .status-indicator.online { background-color: #28a745; }
-        .status-indicator.offline { background-color: #dc3545; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background-color: #f0f2f5; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 12px; margin-bottom: 25px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        .main-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; min-height: 70vh; }
+        .panel { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.08); border: 1px solid rgba(0,0,0,0.05); }
+        .server-panel { overflow-y: auto; max-height: 75vh; }
+        .events-panel { display: flex; flex-direction: column; }
+        .server-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 18px; }
+        .server-card { 
+            background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%); 
+            border: 1px solid #dee2e6; 
+            border-radius: 8px; 
+            padding: 18px; 
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        .server-card:hover { transform: translateY(-2px); box-shadow: 0 6px 25px rgba(0,0,0,0.1); }
+        .server-card.leader { border-left: 5px solid #28a745; background: linear-gradient(145deg, #d4edda 0%, #c3e6cb 100%); }
+        .server-card.follower { border-left: 5px solid #6c757d; }
+        .shard { display: inline-block; margin: 3px; padding: 6px 10px; border-radius: 6px; font-size: 12px; font-weight: 500; }
+        .shard.serving { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .shard.pulling { background-color: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .shard.sending { background-color: #cce5ff; color: #004085; border: 1px solid #b3d7ff; }
+        .shard.gcing { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .events-container { 
+            flex: 1; 
+            min-height: 65vh; 
+            max-height: 65vh; 
+            overflow-y: auto; 
+            border: 2px solid #e9ecef; 
+            border-radius: 8px; 
+            padding: 15px; 
+            background: #fafbfc;
+        }
+        .event { 
+            padding: 12px 15px; 
+            margin: 6px 0; 
+            border-radius: 8px; 
+            font-size: 14px; 
+            border-left: 4px solid #ddd;
+            background: white;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+            transition: transform 0.1s ease;
+        }
+        .event:hover { transform: translateX(3px); }
+        .event.raft { background: linear-gradient(145deg, #e3f2fd 0%, #bbdefb 100%); border-left-color: #2196f3; }
+        .event.shard { background: linear-gradient(145deg, #f3e5f5 0%, #e1bee7 100%); border-left-color: #9c27b0; }
+        .event.config { background: linear-gradient(145deg, #e8f5e8 0%, #c8e6c9 100%); border-left-color: #4caf50; }
+        .event.client { background: linear-gradient(145deg, #fff3e0 0%, #ffcc02 100%); border-left-color: #ff9800; }
+        .timestamp { color: #666; font-size: 11px; opacity: 0.8; margin-bottom: 4px; }
+        .status-indicator { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 8px; }
+        .status-indicator.online { background-color: #28a745; box-shadow: 0 0 8px rgba(40, 167, 69, 0.4); }
+        .status-indicator.offline { background-color: #dc3545; box-shadow: 0 0 8px rgba(220, 53, 69, 0.4); }
         h1, h2, h3 { margin-top: 0; }
-        .refresh-btn { background: #007bff; color: white; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; }
-        .refresh-btn:hover { background: #0056b3; }
+        h2 { color: #495057; border-bottom: 2px solid #e9ecef; padding-bottom: 10px; margin-bottom: 20px; }
+        .refresh-btn { 
+            background: linear-gradient(145deg, #007bff 0%, #0056b3 100%); 
+            color: white; 
+            border: none; 
+            padding: 10px 20px; 
+            border-radius: 6px; 
+            cursor: pointer; 
+            font-weight: 500;
+            transition: all 0.2s ease;
+        }
+        .refresh-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 15px rgba(0, 123, 255, 0.3); }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; }
+        .stat-card { 
+            background: linear-gradient(145deg, #fff 0%, #f8f9fa 100%); 
+            padding: 20px; 
+            border-radius: 8px; 
+            text-align: center; 
+            border: 1px solid #e9ecef;
+        }
+        .stat-number { font-size: 2em; font-weight: bold; color: #495057; }
+        .stat-label { color: #6c757d; margin-top: 5px; }
     </style>
 </head>
 <body>
@@ -216,21 +265,21 @@ func (m *Monitor) handleIndex(w http.ResponseWriter, r *http.Request) {
             <button class="refresh-btn" onclick="refreshData()">🔄 刷新数据</button>
         </div>
         
-        <div class="grid">
-            <div class="panel">
+        <div class="main-grid">
+            <div class="panel server-panel">
                 <h2>🖥️ 服务器状态</h2>
                 <div id="servers" class="server-grid"></div>
             </div>
             
-            <div class="panel">
-                <h2>📋 最新事件</h2>
-                <div id="events" style="max-height: 500px; overflow-y: auto;"></div>
+            <div class="panel events-panel">
+                <h2>📋 最新事件流</h2>
+                <div id="events" class="events-container"></div>
             </div>
         </div>
         
-        <div class="panel" style="margin-top: 20px;">
-            <h2>📊 集群统计</h2>
-            <div id="statistics"></div>
+        <div class="panel" style="margin-top: 25px;">
+            <h2>📊 集群统计概览</h2>
+            <div id="statistics" class="stats-grid"></div>
         </div>
     </div>
 
@@ -303,10 +352,22 @@ func (m *Monitor) handleIndex(w http.ResponseWriter, r *http.Request) {
                 .then(data => {
                     const container = document.getElementById('statistics');
                     container.innerHTML = 
-                        '<p><strong>总服务器数:</strong> ' + data.totalServers + '</p>' +
-                        '<p><strong>Leader数:</strong> ' + data.leaderCount + '</p>' +
-                        '<p><strong>活跃分片数:</strong> ' + data.activeShards + '</p>' +
-                        '<p><strong>迁移中分片数:</strong> ' + data.migrationShards + '</p>';
+                        '<div class="stat-card">' +
+                            '<div class="stat-number">' + data.totalServers + '</div>' +
+                            '<div class="stat-label">总服务器数</div>' +
+                        '</div>' +
+                        '<div class="stat-card">' +
+                            '<div class="stat-number">' + data.leaderCount + '</div>' +
+                            '<div class="stat-label">Leader数量</div>' +
+                        '</div>' +
+                        '<div class="stat-card">' +
+                            '<div class="stat-number">' + data.activeShards + '</div>' +
+                            '<div class="stat-label">活跃分片</div>' +
+                        '</div>' +
+                        '<div class="stat-card">' +
+                            '<div class="stat-number">' + data.migrationShards + '</div>' +
+                            '<div class="stat-label">迁移中分片</div>' +
+                        '</div>';
                 })
                 .catch(err => console.error('Error fetching statistics:', err));
         }

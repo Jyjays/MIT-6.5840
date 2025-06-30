@@ -1068,8 +1068,10 @@ func TestContinuousStable(t *testing.T) {
 
 	fmt.Printf("初始化验证完成，开始持续操作...\n")
 
-	// 操作计数器
+	// 操作计数器和性能统计
 	var opCount int64
+	var getCount, putCount, appendCount int64
+	var totalLatency int64 // 总延迟时间（纳秒）
 	startTime := time.Now()
 
 	// 持续运行循环
@@ -1081,34 +1083,55 @@ func TestContinuousStable(t *testing.T) {
 
 		switch opType {
 		case 0: // Get操作
+			opStart := time.Now()
 			value := ck.Get(key)
+			opDuration := time.Since(opStart)
+
 			atomic.AddInt64(&opCount, 1)
-			if atomic.LoadInt64(&opCount)%100 == 0 {
+			atomic.AddInt64(&getCount, 1)
+			atomic.AddInt64(&totalLatency, opDuration.Nanoseconds())
+
+			if atomic.LoadInt64(&opCount)%50 == 0 {
 				elapsed := time.Since(startTime)
-				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Get(%s) = %s\n",
-					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, value[:min(20, len(value))])
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Get(%s) = %s (延迟: %v)\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key,
+					value[:min(20, len(value))], opDuration.Truncate(time.Microsecond))
 			}
 
 		case 1: // Put操作
 			newValue := fmt.Sprintf("value_%d_at_%d", keyIndex, time.Now().Unix())
+			opStart := time.Now()
 			ck.Put(key, newValue)
+			opDuration := time.Since(opStart)
+
 			va[keyIndex] = newValue
 			atomic.AddInt64(&opCount, 1)
-			if atomic.LoadInt64(&opCount)%100 == 0 {
+			atomic.AddInt64(&putCount, 1)
+			atomic.AddInt64(&totalLatency, opDuration.Nanoseconds())
+
+			if atomic.LoadInt64(&opCount)%50 == 0 {
 				elapsed := time.Since(startTime)
-				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Put(%s, %s)\n",
-					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, newValue[:min(20, len(newValue))])
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Put(%s, %s) (延迟: %v)\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key,
+					newValue[:min(20, len(newValue))], opDuration.Truncate(time.Microsecond))
 			}
 
 		case 2: // Append操作
 			appendValue := fmt.Sprintf("_append_%d", time.Now().Unix()%1000)
+			opStart := time.Now()
 			ck.Append(key, appendValue)
+			opDuration := time.Since(opStart)
+
 			va[keyIndex] += appendValue
 			atomic.AddInt64(&opCount, 1)
-			if atomic.LoadInt64(&opCount)%100 == 0 {
+			atomic.AddInt64(&appendCount, 1)
+			atomic.AddInt64(&totalLatency, opDuration.Nanoseconds())
+
+			if atomic.LoadInt64(&opCount)%50 == 0 {
 				elapsed := time.Since(startTime)
-				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Append(%s, %s)\n",
-					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key, appendValue)
+				fmt.Printf("完成 %d 次操作 (运行时间: %v) - Append(%s, %s) (延迟: %v)\n",
+					atomic.LoadInt64(&opCount), elapsed.Truncate(time.Second), key,
+					appendValue, opDuration.Truncate(time.Microsecond))
 			}
 		}
 
@@ -1127,16 +1150,42 @@ func TestContinuousStable(t *testing.T) {
 			fmt.Printf("一致性检查通过\n")
 		}
 
-		// 每隔一段时间显示统计信息
-		if atomic.LoadInt64(&opCount)%1000 == 0 {
-			elapsed := time.Since(startTime)
-			rate := float64(atomic.LoadInt64(&opCount)) / elapsed.Seconds()
-			fmt.Printf("=== 统计信息 ===\n")
-			fmt.Printf("总操作数: %d\n", atomic.LoadInt64(&opCount))
-			fmt.Printf("运行时间: %v\n", elapsed.Truncate(time.Second))
-			fmt.Printf("操作速率: %.2f ops/sec\n", rate)
+		// 每隔一段时间显示详细的性能统计信息
+		if atomic.LoadInt64(&opCount)%500 == 0 {
+			currentTime := time.Now()
+			elapsed := currentTime.Sub(startTime)
+
+			totalOps := atomic.LoadInt64(&opCount)
+			gets := atomic.LoadInt64(&getCount)
+			puts := atomic.LoadInt64(&putCount)
+			appends := atomic.LoadInt64(&appendCount)
+			totalLat := atomic.LoadInt64(&totalLatency)
+
+			// 计算吞吐量
+			overallThroughput := float64(totalOps) / elapsed.Seconds()
+
+			// 计算平均延迟
+			avgLatency := time.Duration(0)
+			if totalOps > 0 {
+				avgLatency = time.Duration(totalLat / totalOps)
+			}
+
+			fmt.Printf("\n=== 详细性能统计 ===\n")
+			fmt.Printf("总运行时间: %v\n", elapsed.Truncate(time.Second))
+			fmt.Printf("总操作数: %d (Get: %d, Put: %d, Append: %d)\n", totalOps, gets, puts, appends)
+			fmt.Printf("整体吞吐量: %.2f ops/sec\n", overallThroughput)
+			fmt.Printf("平均延迟: %v\n", avgLatency.Truncate(time.Microsecond))
+
+			// 操作分布
+			if totalOps > 0 {
+				fmt.Printf("操作分布: Get %.1f%%, Put %.1f%%, Append %.1f%%\n",
+					float64(gets)/float64(totalOps)*100,
+					float64(puts)/float64(totalOps)*100,
+					float64(appends)/float64(totalOps)*100)
+			}
+
 			fmt.Printf("监控地址: http://localhost:8080\n")
-			fmt.Printf("===============\n")
+			fmt.Printf("==================\n\n")
 		}
 
 		// 控制操作频率，避免过快
