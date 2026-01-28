@@ -2,6 +2,7 @@ package shardkv
 
 import (
 	"fmt"
+
 	"6.5840/shardctrler"
 )
 
@@ -120,9 +121,22 @@ func (kv *ShardKV) applyLogToStateMachine(op *Op) *NotifychMsg {
 }
 
 func (kv *ShardKV) notify(index int, reply *NotifychMsg) {
-	ch := kv.getNotifyChMsg(index)
-	if ch != nil {
-		ch <- reply
+	// 调用此函数时已经持有 kv.mu 锁
+
+	ch, ok := kv.notifyMap[index]
+
+	if ok {
+		select {
+		case ch <- reply:
+			// 成功发送
+		default:
+			// channel 满了（虽然 buffer=1 且逻辑正确时不应该满），
+			// 但为了健壮性，防止阻塞 applier 导致死锁，这里必须非阻塞
+		}
+	} else {
+		// ok 为 false，说明 StartCmd 已经超时并调用了 delete，
+		// 或者这条命令是重复的。
+		// 直接忽略即可，什么都不用做。
 	}
 }
 
@@ -250,19 +264,19 @@ func (kv *ShardKV) applyDeleteShard(args DeleteShardArgs) *NotifychMsg {
 
 func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 	monitor := GetMonitor()
-	
+
 	oldShards := kv.currentConfig.Shards
 	newShards := config.Shards
 	kv.lastConfig = kv.currentConfig.DeepCopy()
 	kv.currentConfig = config.DeepCopy()
-	
+
 	monitor.LogEvent("CONFIG", kv.gid, kv.me, fmt.Sprintf("Processing config change: %d -> %d", kv.lastConfig.Num, config.Num), map[string]interface{}{
 		"oldConfigNum": kv.lastConfig.Num,
 		"newConfigNum": config.Num,
-		"oldShards": oldShards,
-		"newShards": newShards,
+		"oldShards":    oldShards,
+		"newShards":    newShards,
 	})
-	
+
 	DPrintf("{Group %v Server %v} newconfig %v\n", kv.gid, kv.me, config)
 	for sid := 0; sid < shardctrler.NShards; sid++ {
 		newgid := newShards[sid]
@@ -274,9 +288,9 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 					kv.stateMachine.setShardState(sid, Pulling)
 					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Pulling", sid), map[string]interface{}{
 						"shardId": sid,
-						"oldGid": oldgid,
-						"newGid": newgid,
-						"state": "Pulling",
+						"oldGid":  oldgid,
+						"newGid":  newgid,
+						"state":   "Pulling",
 					})
 					//pullArray = append(pullArray, sid)
 					//DPrintf("{Group %v Server %v} set shard %v state Pulling\n", kv.gid, kv.me, sid)
@@ -285,9 +299,9 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 					kv.stateMachine.setShardState(sid, Serving)
 					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Serving", sid), map[string]interface{}{
 						"shardId": sid,
-						"oldGid": oldgid,
-						"newGid": newgid,
-						"state": "Serving",
+						"oldGid":  oldgid,
+						"newGid":  newgid,
+						"state":   "Serving",
 					})
 					//serveArray = append(serveArray, sid)
 				}
@@ -298,9 +312,9 @@ func (kv *ShardKV) processNewConfig(config shardctrler.Config) {
 					kv.stateMachine.setShardState(sid, Sending)
 					monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Shard %d state changed to Sending", sid), map[string]interface{}{
 						"shardId": sid,
-						"oldGid": oldgid,
-						"newGid": newgid,
-						"state": "Sending",
+						"oldGid":  oldgid,
+						"newGid":  newgid,
+						"state":   "Sending",
 					})
 					//sendArray = append(sendArray, sid)
 				}

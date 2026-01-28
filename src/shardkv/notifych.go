@@ -21,9 +21,9 @@ func (kv *ShardKV) closeNotifyChMsg(index int) {
 	kv.mu.Lock()
 	defer kv.mu.Unlock()
 
-	ch, ok := kv.notifyMap[index]
-	if ok {
-		close(ch)
-		delete(kv.notifyMap, index)
-	}
+	// ch, ok := kv.notifyMap[index]
+	// if ok {
+	// 	close(ch)
+	delete(kv.notifyMap, index)
+	// }
 }

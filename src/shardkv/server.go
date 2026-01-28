@@ -85,10 +85,10 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	monitor := GetMonitor()
 	monitor.LogEvent("CLIENT", kv.gid, kv.me, fmt.Sprintf("%s request for key: %s", args.Op, args.Key), map[string]interface{}{
 		"operation": args.Op,
-		"key":      args.Key,
-		"value":    args.Value,
-		"clientId": args.ClientID,
-		"seq":      args.Seq,
+		"key":       args.Key,
+		"value":     args.Value,
+		"clientId":  args.ClientID,
+		"seq":       args.Seq,
 	})
 
 	op := Op{
@@ -106,8 +106,8 @@ func (kv *ShardKV) PutAppend(args *PutAppendArgs, reply *PutAppendReply) {
 	// 记录响应事件
 	monitor.LogEvent("CLIENT", kv.gid, kv.me, fmt.Sprintf("%s response for key: %s, err: %s", args.Op, args.Key, reply.Err), map[string]interface{}{
 		"operation": args.Op,
-		"key":      args.Key,
-		"error":    reply.Err,
+		"key":       args.Key,
+		"error":     reply.Err,
 	})
 
 	// 更新服务器状态
@@ -196,7 +196,7 @@ func (kv *ShardKV) killed() bool {
 
 func (kv *ShardKV) listenConfig() {
 	monitor := GetMonitor()
-	
+
 	for !kv.killed() {
 		if !kv.isLeader() {
 			time.Sleep(100 * time.Millisecond)
@@ -222,9 +222,9 @@ func (kv *ShardKV) listenConfig() {
 				monitor.LogEvent("CONFIG", kv.gid, kv.me, fmt.Sprintf("New config detected: %d -> %d", currentNum, config.Num), map[string]interface{}{
 					"oldConfigNum": currentNum,
 					"newConfigNum": config.Num,
-					"newConfig": config,
+					"newConfig":    config,
 				})
-				
+
 				cmd := NewConfigCommand(&config)
 				kv.startCmd(cmd)
 			} else {
@@ -238,7 +238,7 @@ func (kv *ShardKV) listenConfig() {
 
 func (kv *ShardKV) listenPullingShard() {
 	monitor := GetMonitor()
-	
+
 	for !kv.killed() {
 		// 只有 leader 才执行迁移操作
 		if !kv.isLeader() {
@@ -251,14 +251,14 @@ func (kv *ShardKV) listenPullingShard() {
 		lastConfig := kv.lastConfig.DeepCopy()
 		currentConfigNum := kv.currentConfig.Num
 		kv.mu.RUnlock()
-		
+
 		if len(groupToShardIDs) > 0 {
 			monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Pulling shards from %d groups", len(groupToShardIDs)), map[string]interface{}{
 				"groupToShards": groupToShardIDs,
-				"configNum": currentConfigNum,
+				"configNum":     currentConfigNum,
 			})
 		}
-		
+
 		DPrintf("{Group %v Server %v} listenPullingShard groupToShardIDs %v\n", kv.gid, kv.me, groupToShardIDs)
 		// 对于需要从其他组拉取数据的 shard，按 group 并发发送 RPC
 		var wg sync.WaitGroup
@@ -270,13 +270,13 @@ func (kv *ShardKV) listenPullingShard() {
 			wg.Add(1)
 			go func(gid int, shardIDs []int, servers []string, configNum int) {
 				defer wg.Done()
-				
+
 				monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Requesting shards %v from group %d", shardIDs, gid), map[string]interface{}{
 					"targetGid": gid,
-					"shardIds": shardIDs,
+					"shardIds":  shardIDs,
 					"configNum": configNum,
 				})
-				
+
 				// 构造 GetShard RPC 参数，这里传递需要拉取的 shardIDs 和 configNum（使用当前配置编号）
 				args := GetShardArgs{
 					ConfigNum: configNum,
@@ -290,19 +290,19 @@ func (kv *ShardKV) listenPullingShard() {
 					if ok := srv.Call("ShardKV.GetShard", &args, &reply); ok && reply.Err == OK {
 						// 成功拉取 shard 数据后，通过 Raft 命令插入这些 shard
 						monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Successfully pulled shards %v from group %d", shardIDs, gid), map[string]interface{}{
-							"sourceGid": gid,
-							"shardIds": shardIDs,
+							"sourceGid":  gid,
+							"shardIds":   shardIDs,
 							"shardsData": len(reply.Shards),
 						})
-						
+
 						kv.startCmd(NewInsertShardsCommand(&reply))
 						return
 					}
 				}
-				
+
 				monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Failed to pull shards %v from group %d", shardIDs, gid), map[string]interface{}{
 					"targetGid": gid,
-					"shardIds": shardIDs,
+					"shardIds":  shardIDs,
 				})
 			}(gid, shardIDs, servers, currentConfigNum)
 		}
@@ -315,7 +315,7 @@ func (kv *ShardKV) listenPullingShard() {
 
 func (kv *ShardKV) listenDeleteShard() {
 	monitor := GetMonitor()
-	
+
 	for !kv.killed() {
 		if !kv.isLeader() {
 			time.Sleep(100 * time.Millisecond)
@@ -326,14 +326,14 @@ func (kv *ShardKV) listenDeleteShard() {
 		lastConfig := kv.lastConfig.DeepCopy()
 		configNum := kv.currentConfig.Num
 		kv.mu.RUnlock()
-		
+
 		if len(gid2shards) > 0 {
 			monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Garbage collecting shards to %d groups", len(gid2shards)), map[string]interface{}{
 				"groupToShards": gid2shards,
-				"configNum": configNum,
+				"configNum":     configNum,
 			})
 		}
-		
+
 		var wg sync.WaitGroup
 		for gid, shardIDs := range gid2shards {
 			servers, ok := lastConfig.Groups[gid]
@@ -343,13 +343,13 @@ func (kv *ShardKV) listenDeleteShard() {
 			wg.Add(1)
 			go func(shardIDs []int, servers []string, configNum int) {
 				defer wg.Done()
-				
+
 				monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Sending delete request for shards %v to group %d", shardIDs, gid), map[string]interface{}{
 					"targetGid": gid,
-					"shardIds": shardIDs,
+					"shardIds":  shardIDs,
 					"configNum": configNum,
 				})
-				
+
 				args := DeleteShardArgs{
 					ConfigNum: configNum,
 					ShardIDs:  shardIDs,
@@ -361,18 +361,18 @@ func (kv *ShardKV) listenDeleteShard() {
 						// 成功发送DeleteShard RPC后将GCing状态的shard转为Serving
 						monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Successfully deleted shards %v from group %d", shardIDs, gid), map[string]interface{}{
 							"targetGid": gid,
-							"shardIds": shardIDs,
+							"shardIds":  shardIDs,
 						})
-						
+
 						cmd := NewDeleteShardsCommand(&args)
 						kv.startCmd(cmd)
 						return
 					}
 				}
-				
+
 				monitor.LogEvent("SHARD", kv.gid, kv.me, fmt.Sprintf("Failed to delete shards %v from group %d", shardIDs, gid), map[string]interface{}{
 					"targetGid": gid,
-					"shardIds": shardIDs,
+					"shardIds":  shardIDs,
 				})
 			}(shardIDs, servers, configNum)
 		}
@@ -429,10 +429,10 @@ func (kv *ShardKV) startCmd(cmd interface{}) *NotifychMsg {
 		msg = &NotifychMsg{}
 		msg.Err = ErrTimeout
 	}
-	go func() {
-		DPrintf("{Group %v Server %v} There are %v pending commands\n", kv.gid, kv.me, len(kv.notifyMap))
-		kv.closeNotifyChMsg(index)
-	}()
+	// go func() {
+	DPrintf("{Group %v Server %v} There are %v pending commands\n", kv.gid, kv.me, len(kv.notifyMap))
+	defer kv.closeNotifyChMsg(index)
+	// }()
 	return msg
 }
 
@@ -495,8 +495,8 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	monitor := GetMonitor()
 	monitor.LogEvent("SERVER", gid, me, "ShardKV server started", map[string]interface{}{
 		"maxraftstate": maxraftstate,
-		"groupId": gid,
-		"serverId": me,
+		"groupId":      gid,
+		"serverId":     me,
 	})
 
 	kv.restoreSnapshot(kv.persist.ReadSnapshot())
@@ -504,7 +504,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 	go kv.listenConfig()
 	go kv.listenPullingShard()
 	go kv.listenDeleteShard()
-	
+
 	// 定期更新服务器状态
 	go func() {
 		for !kv.killed() {
@@ -512,7 +512,7 @@ func StartServer(servers []*labrpc.ClientEnd, me int, persister *raft.Persister,
 			time.Sleep(1 * time.Second)
 		}
 	}()
-	
+
 	if Output {
 		file, _ := os.OpenFile("log.txt", os.O_CREATE|os.O_RDWR|os.O_APPEND, 0666)
 		log.SetOutput(file)
